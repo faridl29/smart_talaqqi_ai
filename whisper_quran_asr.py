@@ -121,6 +121,8 @@ class TarteelASR:
             input_features = inputs.input_features
             attention_mask = inputs.attention_mask
 
+            forced_decoder_ids = cls._processor.get_decoder_prompt_ids(language="ar", task="transcribe")
+
             with torch.inference_mode():
                 gen_out = model.generate(
                     input_features,
@@ -129,6 +131,8 @@ class TarteelASR:
                     num_beams=1,
                     do_sample=False,
                     use_cache=True,
+                    forced_decoder_ids=forced_decoder_ids,
+                    no_repeat_ngram_size=0,
                     return_dict_in_generate=bool(return_confidence),
                     output_scores=bool(return_confidence),
                 )

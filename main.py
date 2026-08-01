@@ -109,7 +109,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
     MIN_BUFFER_BYTES = 9600           # mulai evaluasi setelah ~0.3 detik
     AUDIO_EVAL_INTERVAL_BYTES = 9600  # interval antar eval ~0.3 detik
     EVAL_WINDOW_BYTES = 32000         # VAD check 1.0 detik terakhir
-    STREAM_WINDOW_BYTES = 256000      # ~8 detik akumulasi audio (fast low-latency context)
+    STREAM_WINDOW_BYTES = 1024000     # ~32 detik akumulasi audio (full recitation context)
     VAD_RMS_THRESHOLD = 500           # int16 RMS minimum
 
     def _has_speech(pcm: bytes) -> bool:
@@ -192,7 +192,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
 
                     if TarteelASR.is_available():
                         # Transkripsikan akumulasi audio bacaan sejauh ini
-                        accumulated_audio = bytes(audio_pcm_buffer[-STREAM_WINDOW_BYTES:])
+                        accumulated_audio = bytes(audio_pcm_buffer)
                         target_words = len(target_ayah_text.split())
                         dynamic_stream_tokens = max(24, min(320, target_words * 3 + 15))
                         raw_transcript, confidence = TarteelASR.transcribe_pcm(
