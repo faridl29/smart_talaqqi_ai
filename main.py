@@ -146,7 +146,12 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                 elif action == "finish":
                     if target_ayah_text:
                         if len(audio_pcm_buffer) > 0 and TarteelASR.is_available():
-                            raw_transcript, confidence = TarteelASR.transcribe_pcm(bytes(audio_pcm_buffer))
+                            target_words = len(target_ayah_text.split())
+                            dynamic_tokens = max(32, min(512, target_words * 3 + 30))
+                            raw_transcript, confidence = TarteelASR.transcribe_pcm(
+                                bytes(audio_pcm_buffer),
+                                max_tokens=dynamic_tokens
+                            )
                             final_result = MakhrajEngine.evaluate_realtime_stream(
                                 target_ayah_text=target_ayah_text,
                                 recognized_speech_text=raw_transcript
@@ -186,10 +191,12 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                         continue
 
                     if TarteelASR.is_available():
-                        # Transkripsikan akumulasi audio bacaan sejauh ini (max 8s window = 256000 bytes untuk latency ultra cepat)
+                        # Transkripsikan akumulasi audio bacaan sejauh ini
                         accumulated_audio = bytes(audio_pcm_buffer[-STREAM_WINDOW_BYTES:])
+                        target_words = len(target_ayah_text.split())
+                        dynamic_stream_tokens = max(24, min(320, target_words * 3 + 15))
                         raw_transcript, confidence = TarteelASR.transcribe_pcm(
-                            accumulated_audio, return_confidence=False, max_tokens=48
+                            accumulated_audio, return_confidence=False, max_tokens=dynamic_stream_tokens
                         )
                         # Tarteel output Arabic text dengan tashkeel → langsung dipakai.
                         # Skip kalau empty / cuma punctuation.

@@ -128,8 +128,9 @@ class TarteelASR:
                     max_new_tokens=max_tokens,
                     num_beams=1,
                     do_sample=False,
-                    return_dict_in_generate=return_confidence,
-                    output_scores=return_confidence,
+                    use_cache=True,
+                    return_dict_in_generate=bool(return_confidence),
+                    output_scores=bool(return_confidence),
                 )
 
             sequences = gen_out.sequences if return_confidence else gen_out
