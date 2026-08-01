@@ -2,15 +2,14 @@
 Smart Talaqqi AI Server — Makhraj & Phonetic Analysis Engine.
 
 Pendekatan hybrid:
-1) Nawar Halabi-style G2P Phonetiser (pure Python, zero-install) untuk
-   mengubah teks Arab ber-harakat (Al-Quran Uthmani) menjadi string fonem
-   dengan vocabulary SAMA dengan IqraEval Wav2Vec2.
-2) IqraEval Wav2Vec2 model memberikan string fonem dari audio pengguna.
-3) Kedua string fonem dibandingkan dengan Levenshtein Distance + aligned-diff
-   untuk deteksi makhraj / harakat / mad secara per-fonem.
+1) Nawar Halabi-style G2P Phonetiser (pure Python, zero-install) mengubah
+   teks Arab ber-harakat (Al-Quran Uthmani) menjadi string fonem.
+2) Tarteel Whisper Tiny ASR (tarteel-ai/whisper-tiny-ar-quran) memberikan
+   teks Arab hasil transkripsi bacaan pengguna.
+3) Kedua string fonem (target + recognized) dibandingkan dengan Levenshtein
+   Distance + aligned-diff untuk deteksi makhraj / harakat / mad per-fonem.
 
-Tidak ada lagi PHONEME_MAP ayat-spesifik. Bekerja otomatis untuk SELURUH ayat
-Al-Quran (Al-Fatihah, Al-Baqarah, dst.) tanpa definisi manual.
+Bekerja otomatis untuk SELURUH ayat Al-Quran tanpa definisi manual.
 """
 
 import os

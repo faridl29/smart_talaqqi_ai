@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from makhraj_engine import MakhrajEngine
-from iqraeval_asr import IqraEvalASR
+from whisper_quran_asr import TarteelASR
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
@@ -32,8 +32,8 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Pre-load ASR models secara aman saat startup server."""
-    logger.info("Server starting up — pre-loading IqraEval Wav2Vec2-300M model...")
-    IqraEvalASR.preload_model()
+    logger.info("Server starting up — pre-loading Tarteel Whisper Tiny...")
+    TarteelASR.preload_model()
     yield
 
 app = FastAPI(
@@ -60,14 +60,14 @@ class RecitationRequest(BaseModel):
 
 @app.get("/")
 async def health_check():
-    iqraeval_ready = IqraEvalASR.is_available()
+    qw_ready = TarteelASR.is_available()
     return {
-        "server": "Smart Talaqqi AI Server (IqraEval 300M Exclusive)",
-        "status": "healthy" if iqraeval_ready else "loading",
-        "primary_asr": "IqraEval Wav2Vec2-300M",
-        "iqraeval_ready": iqraeval_ready,
+        "server": "Smart Talaqqi AI Server (Tarteel Whisper Tiny)",
+        "status": "healthy" if qw_ready else "loading",
+        "primary_asr": "tarteel-ai/whisper-tiny-ar-quran (PyTorch CPU)",
+        "tarteel_ready": qw_ready,
         "features": [
-            "Phoneme-Level Mispronunciation Detection (IqraEval 2026)",
+            "Quran-Specialized ASR (tarteel-ai/whisper-tiny-ar-quran, Apache-2.0)",
             "Real-Time WebSocket Audio Streaming",
             "Makhraj & Phonetic Error Diagnosis",
             "Harakat & Vokal (a/i/u) Mismatch Check",
@@ -96,7 +96,7 @@ async def evaluate_recitation(req: RecitationRequest):
 @app.websocket("/ws/talaqqi/stream")
 async def websocket_talaqqi_stream(websocket: WebSocket):
     """
-    WebSocket Real-Time Audio Stream Endpoint (Eksklusif IqraEval Wav2Vec2).
+    WebSocket Real-Time Audio Stream Endpoint (Tarteel Whisper Tiny).
     """
     await websocket.accept()
     logger.info("Client WebSocket terkoneksi ke Talaqqi AI Server.")
@@ -138,22 +138,22 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                     logger.info(f"[WebSocket] Init Talaqqi Stream untuk Target Ayat: '{target_ayah_text}'")
                     await websocket.send_json({
                         "status": "initialized",
-                        "iqraeval_ready": IqraEvalASR.is_available(),
-                        "message": "Server AI Siap menerima stream audio murni IqraEval."
+                        "tarteel_ready": TarteelASR.is_available(),
+                        "message": "Server AI siap menerima stream audio (Tarteel Whisper Tiny)."
                     })
 
                 elif action == "finish":
                     if target_ayah_text:
-                        if len(audio_pcm_buffer) > 0 and IqraEvalASR.is_available():
-                            raw_transcript, confidence = IqraEvalASR.transcribe_pcm(bytes(audio_pcm_buffer))
+                        if len(audio_pcm_buffer) > 0 and TarteelASR.is_available():
+                            raw_transcript, confidence = TarteelASR.transcribe_pcm(bytes(audio_pcm_buffer))
                             final_result = MakhrajEngine.evaluate_realtime_stream(
                                 target_ayah_text=target_ayah_text,
                                 recognized_speech_text=raw_transcript
                             )
-                            final_result["source"] = "iqraeval"
+                            final_result["source"] = "tarteel"
                             final_result["status"] = "completed"
                             final_result["model_confidence"] = round(confidence, 3)
-                            logger.info(f"[WebSocket Finish] Evaluasi Selesai -> Accuracy: {final_result.get('accuracy')}%, Transkrip Fonem: '{raw_transcript}', Makhraj Errors: {len(final_result.get('makhraj_errors', []))}, Model Conf: {confidence:.2%}")
+                            logger.info(f"[WebSocket Finish] Evaluasi Selesai -> Accuracy: {final_result.get('accuracy')}%, Transkrip: '{raw_transcript}', Makhraj Errors: {len(final_result.get('makhraj_errors', []))}, Model Conf: {confidence:.2%}")
                             await websocket.send_json(final_result)
                         else:
                             await websocket.send_json({
@@ -182,33 +182,26 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                     if not _has_speech(audio_window):
                         continue
 
-                    if IqraEvalASR.is_available():
-                        raw_transcript, confidence = IqraEvalASR.transcribe_pcm(
+                    if TarteelASR.is_available():
+                        raw_transcript, confidence = TarteelASR.transcribe_pcm(
                             audio_window, return_confidence=False
                         )
-                        # Filter IqraEval special tokens (<, <s>, <pad>, </s>, <unk>, |)
-                        # yang lolos ke UI sebagai token kosong & bikin total_words=0
-                        clean_tokens = [
-                            t for t in (raw_transcript or "").split()
-                            if t and not t.startswith("<") and t not in {"|", "<pad>", "<s>", "</s>", "<unk>"}
-                        ]
-                        if not clean_tokens:
-                            continue
-                        clean_transcript = " ".join(clean_tokens)
-                        if not clean_transcript:
+                        # Tarteel output Arabic text dengan tashkeel → langsung dipakai.
+                        # Skip kalau empty / cuma punctuation.
+                        clean = (raw_transcript or "").strip()
+                        clean = " ".join(clean.split())
+                        if not clean or not any('\u0600' <= c <= '\u06FF' for c in clean):
                             continue
 
-                        # Evaluasi phoneme matching dengan target ayat (pakai transkrip bersih)
                         eval_result = MakhrajEngine.evaluate_realtime_stream(
                             target_ayah_text=target_ayah_text,
-                            recognized_speech_text=clean_transcript
+                            recognized_speech_text=clean
                         )
                         eval_result["status"] = "evaluating"
-                        eval_result["source"] = "iqraeval"
+                        eval_result["source"] = "tarteel"
                         eval_result["model_confidence"] = round(confidence, 3)
-                        eval_result["raw_transcript"] = clean_transcript
+                        eval_result["raw_transcript"] = clean
 
-                        # Pakai partial_accuracy dari engine (matched / panjang transkrip aktual) — JUJUR
                         target_total = eval_result.get('total_words') or eval_result.get('total_phonemes', 0) or 0
                         rec_total = eval_result.get('rec_phoneme_count', 0)
                         eval_result["partial_accuracy"] = eval_result.get('partial_accuracy', 0)
@@ -217,7 +210,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                         eval_result["is_realtime"] = True
 
                         logger.info(
-                            f"[WebSocket Stream] IqraEval Fonem: '{raw_transcript}' "
+                            f"[WebSocket Stream] Tarteel: '{raw_transcript}' "
                             f"-> Match: {eval_result.get('matched_count')}/{target_total} "
                             f"| PartialAcc: {eval_result['partial_accuracy']}% "
                             f"| Progress: {eval_result['progress']} | Conf: {confidence:.2%}"

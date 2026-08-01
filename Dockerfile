@@ -16,8 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download IqraEval 300M model during build
-RUN python -c "from transformers import Wav2Vec2ForCTC, Wav2Vec2CTCTokenizer, Wav2Vec2FeatureExtractor; Wav2Vec2CTCTokenizer.from_pretrained('FatimahEmadEldin/wav2vec2-xls-r-300m-iqraeval'); Wav2Vec2FeatureExtractor.from_pretrained('facebook/wav2vec2-xls-r-300m'); Wav2Vec2ForCTC.from_pretrained('FatimahEmadEldin/wav2vec2-xls-r-300m-iqraeval')" || true
+# Pre-download tarteel-ai/whisper-tiny-ar-quran during build (tiny ~ 75MB, Apache-2.0)
+RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('tarteel-ai/whisper-tiny-ar-quran')" || true
 
 
 # Copy application files
