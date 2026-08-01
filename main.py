@@ -103,6 +103,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
 
     target_ayah_text = ""
     audio_pcm_buffer = bytearray()
+    has_spoken_recently = False
 
     # Throttle: evaluasi setiap ~0.3 detik audio (16kHz 16-bit = 32000 bytes/sec)
     last_audio_eval_size = 0
@@ -136,6 +137,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                     target_ayah_text = data.get("target_ayah_text", "")
                     audio_pcm_buffer.clear()
                     last_audio_eval_size = 0
+                    has_spoken_recently = False
                     logger.info(f"[WebSocket] Init Talaqqi Stream untuk Target Ayat: '{target_ayah_text}'")
                     await websocket.send_json({
                         "status": "initialized",
@@ -147,7 +149,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                     if target_ayah_text:
                         if len(audio_pcm_buffer) > 0 and TarteelASR.is_available():
                             target_words = len(target_ayah_text.split())
-                            dynamic_tokens = max(32, min(512, target_words * 3 + 30))
+                            dynamic_tokens = max(64, min(512, target_words * 8 + 30))
                             raw_transcript, confidence = TarteelASR.transcribe_pcm(
                                 bytes(audio_pcm_buffer),
                                 max_tokens=dynamic_tokens
@@ -185,16 +187,23 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                 ):
                     last_audio_eval_size = buffer_size
 
-                    # VAD: skip chunk sunyi sebelum inference mahal
+                    # VAD: Cek suara manusia pada window 1.0 detik terakhir
                     audio_window = bytes(audio_pcm_buffer[-EVAL_WINDOW_BYTES:])
-                    if not _has_speech(audio_window):
-                        continue
+                    is_speech_now = _has_speech(audio_window)
+
+                    if not is_speech_now:
+                        if not has_spoken_recently:
+                            continue
+                        # Evaluasi final trailing-silence begitu pengguna selesai bicara
+                        has_spoken_recently = False
+                    else:
+                        has_spoken_recently = True
 
                     if TarteelASR.is_available():
                         # Transkripsikan akumulasi audio bacaan sejauh ini
                         accumulated_audio = bytes(audio_pcm_buffer)
                         target_words = len(target_ayah_text.split())
-                        dynamic_stream_tokens = max(24, min(320, target_words * 3 + 15))
+                        dynamic_stream_tokens = max(64, min(512, target_words * 8 + 30))
                         raw_transcript, confidence = TarteelASR.transcribe_pcm(
                             accumulated_audio, return_confidence=False, max_tokens=dynamic_stream_tokens
                         )
