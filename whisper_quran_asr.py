@@ -66,6 +66,12 @@ class TarteelASR:
                 )
             except Exception:
                 pass
+            try:
+                import torch
+                if torch.get_num_threads() < 4:
+                    torch.set_num_threads(4)
+            except Exception:
+                pass
             logger.info(f"Model '{cls.MODEL_ID}' loaded.")
         except Exception as e:
             logger.error(f"Gagal memuat model Tarteel: {e}")
@@ -86,6 +92,7 @@ class TarteelASR:
         pcm_bytes: bytes,
         sample_rate: int = 16000,
         return_confidence: bool = True,
+        max_tokens: int = 64,
     ) -> Tuple[str, float]:
         """
         Transcribe raw PCM int16 mono -> (arabic_text_with_tashkeel, confidence).
@@ -114,18 +121,18 @@ class TarteelASR:
             input_features = inputs.input_features
             attention_mask = inputs.attention_mask
 
-            with torch.no_grad():
+            with torch.inference_mode():
                 gen_out = model.generate(
                     input_features,
                     attention_mask=attention_mask,
-                    max_new_tokens=128,
+                    max_new_tokens=max_tokens,
                     num_beams=1,
                     do_sample=False,
-                    return_dict_in_generate=True,
-                    output_scores=True,
+                    return_dict_in_generate=return_confidence,
+                    output_scores=return_confidence,
                 )
 
-            sequences = gen_out.sequences
+            sequences = gen_out.sequences if return_confidence else gen_out
             text = cls._processor.batch_decode(
                 sequences, skip_special_tokens=True
             )[0].strip()

@@ -3,9 +3,9 @@
 
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "4"
+os.environ["OPENBLAS_NUM_THREADS"] = "4"
+os.environ["MKL_NUM_THREADS"] = "4"
 
 import signal
 # Ctrl+C langsung hard kill (graceful shutdown uvicorn sering macet karena inference model)
@@ -104,12 +104,13 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
     target_ayah_text = ""
     audio_pcm_buffer = bytearray()
 
-    # Throttle: evaluasi setiap ~1 detik audio (16kHz 16-bit = 32000 bytes/sec)
+    # Throttle: evaluasi setiap ~0.3 detik audio (16kHz 16-bit = 32000 bytes/sec)
     last_audio_eval_size = 0
-    MIN_BUFFER_BYTES = 16000          # mulai evaluasi setelah ~0.5 detik
-    AUDIO_EVAL_INTERVAL_BYTES = 16000 # interval antar eval ~0.5 detik
-    EVAL_WINDOW_BYTES = 48000         # window 1.5 detik terakhir
-    VAD_RMS_THRESHOLD = 500           # int16 RMS minimum (naik dari 200: laptop mic punya ambient ~300-400)
+    MIN_BUFFER_BYTES = 9600           # mulai evaluasi setelah ~0.3 detik
+    AUDIO_EVAL_INTERVAL_BYTES = 9600  # interval antar eval ~0.3 detik
+    EVAL_WINDOW_BYTES = 32000         # VAD check 1.0 detik terakhir
+    STREAM_WINDOW_BYTES = 256000      # ~8 detik akumulasi audio (fast low-latency context)
+    VAD_RMS_THRESHOLD = 500           # int16 RMS minimum
 
     def _has_speech(pcm: bytes) -> bool:
         if not pcm:
@@ -183,10 +184,10 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                         continue
 
                     if TarteelASR.is_available():
-                        # Transkripsikan seluruh akumulasi audio yang telah dibaca sejauh ini (hingga max 30s = 960000 bytes)
-                        accumulated_audio = bytes(audio_pcm_buffer[-960000:])
+                        # Transkripsikan akumulasi audio bacaan sejauh ini (max 8s window = 256000 bytes untuk latency ultra cepat)
+                        accumulated_audio = bytes(audio_pcm_buffer[-STREAM_WINDOW_BYTES:])
                         raw_transcript, confidence = TarteelASR.transcribe_pcm(
-                            accumulated_audio, return_confidence=False
+                            accumulated_audio, return_confidence=False, max_tokens=48
                         )
                         # Tarteel output Arabic text dengan tashkeel → langsung dipakai.
                         # Skip kalau empty / cuma punctuation.
