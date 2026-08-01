@@ -27,55 +27,81 @@ class MakhrajEngine:
     MAKHRAJ_GUIDANCE = {
         'ح': {
             'category': 'Wasathul Halq (Tengah Tenggorokan)',
-            'guidance': "Huruf Haa (ح) keluar dari tengah tenggorokan. Suara harus bersih; jangan tertukar dengan Ha (ه) dari dasar tenggorokan."
+            'guidance': "Huruf Haa (ح) keluar dari tengah tenggorokan. Suara bersih mengalir halus tanpa hambatan dada.",
+            'anatomy': "Tekan bagian tengah tenggorokan (epiglottis) secara halus ke dinding tenggorokan.",
+            'tajweed_rule': 'Hams & Rakhawah (Desis & Mengalir)',
         },
         'ع': {
             'category': 'Wasathul Halq (Tengah Tenggorokan)',
-            'guidance': "Huruf 'Ain (ع) keluar dari tengah tenggorokan dengan sedikit tekanan; jangan dibaca seperti Alif (ا)."
+            'guidance': "Huruf 'Ain (ع) keluar dari tengah tenggorokan dengan sedikit penekanan lisan.",
+            'anatomy': "Penyempitan di tengah tenggorokan dengan pita suara bergetar sedang.",
+            'tajweed_rule': 'Tawassut (Suara Sedang)',
         },
         'ه': {
-            'category': 'Adnal Halq (Dasar Tenggorokan)',
-            'guidance': "Huruf Ha (ه) dari dasar tenggorokan, hembusan napas halus."
+            'category': 'Aqshal Halq (Dasar Tenggorokan)',
+            'guidance': "Huruf Ha (ه) dari pangkal/dasar tenggorokan dekat dada; hembusan napas dalam.",
+            'anatomy': "Pita suara di pangkal tenggorokan paling bawah terbuka agak lebar.",
+            'tajweed_rule': 'Hams & Tarqiq (Desis Tipis)',
         },
         'خ': {
             'category': 'Adnal Halq (Ujung Tenggorokan)',
-            'guidance': "Huruf Khaa (خ) keluar dari ujung tenggorokan atas; getaran halus."
+            'guidance': "Huruf Khaa (خ) keluar dari ujung tenggorokan paling atas dekat rongga mulut.",
+            'anatomy': "Pertemuan ujung tenggorokan atas dengan pangkal langit-langit mulut.",
+            'tajweed_rule': "Isti'la & Hams (Tebal & Desis)",
         },
         'غ': {
             'category': 'Adnal Halq (Ujung Tenggorokan)',
-            'guidance': "Huruf Ghain (غ) keluar dari ujung tenggorokan; suara tebal mengalir."
+            'guidance': "Huruf Ghain (غ) keluar dari ujung tenggorokan; suara tebal bergema mengalir.",
+            'anatomy': "Pangkal lidah paling belakang terangkat mendekati ujung tenggorokan.",
+            'tajweed_rule': "Isti'la & Jahr (Tebal & Bergetar)",
         },
         'ص': {
             'category': "Isti'la / Tebal (Shafir)",
-            'guidance': "Shaad (ص) huruf tebal & desis; pangkal lidah terangkat. Bedakan dengan Siin (س) yang tipis."
+            'guidance': "Shaad (ص) huruf tebal & berdesis kuat. Bedakan dengan Siin (س) yang tipis.",
+            'anatomy': "Ujung lidah di belakang gigi seri bawah, pangkal lidah terangkat membulat ke atas.",
+            'tajweed_rule': 'Itbaq & Shafir (Tebal & Desis Tajam)',
         },
         'ض': {
             'category': 'Hafatul Lisan (Tepi Lidah)',
-            'guidance': "Dhaad (ض) dari tepi lidah menempel ke geraham atas; jangan dibaca tipis seperti Daal (د)."
+            'guidance': "Dhaad (ض) dari tepi lidah menempel ke geraham atas; jangan dibaca tipis seperti Daal (د).",
+            'anatomy': "Salah satu atau kedua tepi lidah menempel kuat pada dinding gigi geraham atas.",
+            'tajweed_rule': 'Istithalah (Suara Memanjang & Tebal)',
         },
         'ط': {
             'category': "Isti'la / Tebal (Itbaq)",
-            'guidance': "Thaa (ط) huruf tebal; ujung lidah di pangkal gigi seri atas, pangkal lidah terangkat."
+            'guidance': "Thaa (ط) huruf paling tebal; ujung lidah di pangkal gigi seri atas.",
+            'anatomy': "Ujung lidah menempel di gusi gigi seri atas, seluruh badan lidah terangkat.",
+            'tajweed_rule': "Itbaq & Qalqalah (Tebal & Memantul)",
         },
         'ظ': {
-            'category': 'Tepi & Ujung Lidah',
-            'guidance': "Zhaa (ظ) dilafalkan tebal dengan ujung lidah menyentuh gigi seri atas."
+            'category': 'Tharful Lisan (Ujung Lidah)',
+            'guidance': "Zhaa (ظ) dilafalkan tebal dengan ujung lidah sedikit keluar menyentuh ujung gigi seri atas.",
+            'anatomy': "Ujung permukaan lidah sedikit menyentuh ujung dua gigi seri atas secara tebal.",
+            'tajweed_rule': "Itbaq & Isti'la (Tebal Penuh)",
         },
         'ق': {
             'category': 'Aqshal Lisan (Pangkal Lidah)',
-            'guidance': "Qaaf (ق) keluar dari pangkal lidah paling belakang; tebal dan mantap."
+            'guidance': "Qaaf (ق) keluar dari pangkal lidah paling belakang menempel langit-langit lunak.",
+            'anatomy': "Pangkal lidah paling belakang menempel rapat ke langit-langit lunak (uvula).",
+            'tajweed_rule': "Isti'la & Qalqalah (Tebal & Memantul Kuat)",
         },
         'ك': {
-            'category': 'Wasatul Lisan',
-            'guidance': "Kaf (ك) keluar dari tengah lidah; jangan tertukar dengan Qaaf (ق) yang lebih tebal."
+            'category': 'Aqshal Lisan (Pangkal Lidah)',
+            'guidance': "Kaf (ك) keluar dari pangkal lidah sedikit di depan posisi Qaaf (ق); tipis berhembus.",
+            'anatomy': "Pangkal lidah bagian depan menempel ke langit-langit keras lalu terlepas berhembus.",
+            'tajweed_rule': 'Hams & Tarqiq (Desis Tipis)',
         },
         'ث': {
-            'category': 'Ujung Lidah & Gigi Seri',
-            'guidance': "Tsaa (ث) dengan ujung lidah menyentuh gigi seri atas secara lembut."
+            'category': 'Tharful Lisan (Ujung Lidah)',
+            'guidance': "Tsaa (ث) dengan ujung lidah sedikit keluar menyentuh ujung gigi seri atas secara lembut.",
+            'anatomy': "Ujung lidah dijepit halus di antara dua gigi seri depan.",
+            'tajweed_rule': 'Hams & Rakhawah (Desis Soft)',
         },
         'ذ': {
-            'category': 'Ujung Lidah & Gigi Seri',
-            'guidance': "Dzal (ذ) tipis; ujung lidah di antara gigi seri."
+            'category': 'Tharful Lisan (Ujung Lidah)',
+            'guidance': "Dzal (ذ) tipis bergetar; ujung lidah di ujung dua gigi seri atas.",
+            'anatomy': "Ujung lidah menyentuh bagian ujung gigi seri atas tanpa ditekan keras.",
+            'tajweed_rule': 'Jahr & Tarqiq (Bergetar Tipis)',
         },
     }
 
@@ -558,20 +584,21 @@ class MakhrajEngine:
                                 'category': 'Kesalahan Harakat (Vokal Pendek)',
                                 'guidance': f"Vokal '{t_tok}' terbaca sebagai '{r_tok}'."
                             })
-                    else:
                         arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
                         detected_char = cls._PHONEME_TO_ARABIC.get(r_tok, r_tok)
-                        guidance = cls.MAKHRAJ_GUIDANCE.get(arabic_char, {}).get(
-                            'guidance',
-                            f"Fonem '{t_tok}' terbaca '{r_tok}'. Periksa makhraj."
-                        )
-                        category = cls.MAKHRAJ_GUIDANCE.get(arabic_char, {}).get('category', 'Artikulasi Makhraj')
+                        info = cls.MAKHRAJ_GUIDANCE.get(arabic_char, {})
+                        guidance = info.get('guidance', f"Fonem '{t_tok}' terbaca '{r_tok}'. Periksa makhraj.")
+                        category = info.get('category', 'Artikulasi Makhraj')
+                        anatomy = info.get('anatomy', 'Perhatikan posisi lidah dan rongga tenggorokan saat melafalkan huruf.')
+                        tajweed_rule = info.get('tajweed_rule', 'Sifat & Makhraj Huruf')
                         word_errors[word_idx].append({
                             'type': 'makhraj',
                             'target_char': arabic_char,
                             'detected_char': detected_char,
                             'category': category,
                             'guidance': guidance,
+                            'anatomy': anatomy,
+                            'tajweed_rule': tajweed_rule,
                         })
                 target_idx += 1
                 rec_idx += 1
