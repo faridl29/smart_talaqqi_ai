@@ -143,9 +143,7 @@ class MakhrajEngine:
         if not word:
             return []
 
-        s = word
-        if s.startswith('\u0671'):
-            s = 'ا' + s[1:]
+        s = word.replace('\u0671', 'ا').replace('\u06E5', 'و').replace('\u06E6', 'ي')
 
         result: List[str] = []
 
@@ -182,12 +180,14 @@ class MakhrajEngine:
                 continue
 
             v = ''
-            if harakat == '\u064E':
+            if harakat in {'\u064E', '\u064B'}:
                 v = 'a'
-            elif harakat == '\u0650':
+            elif harakat in {'\u0650', '\u064D'}:
                 v = 'i'
-            elif harakat == '\u064F':
+            elif harakat in {'\u064F', '\u064C'}:
                 v = 'u'
+            elif harakat == '\u0670':  # Dagger Alif (Superscript Alif Uthmani)
+                v = 'aa'
 
             is_shaddah = len(letter) == 2
             base = letter[0] if is_shaddah else letter
@@ -196,14 +196,14 @@ class MakhrajEngine:
                 result.append('aa')
                 continue
             if base == 'و':
-                if v == 'u':
+                if v == 'u' or v == 'uu':
                     result.append('uu')
                     continue
                 else:
                     result.append('w')
                     continue
             if base == 'ى' or base == 'ي':
-                if v == 'i':
+                if v == 'i' or v == 'ii':
                     result.append('ii')
                     continue
                 else:
@@ -220,7 +220,9 @@ class MakhrajEngine:
                 result.append(ph)
             else:
                 result.append(ph)
-                if v:
+                if v == 'aa':
+                    result.append('aa')
+                elif v:
                     result.append(v)
 
         return result
@@ -323,15 +325,22 @@ class MakhrajEngine:
         passed = accuracy >= 85
         feedback = cls._generate_feedback(accuracy, passed, len(makhraj_errors))
 
+        matched_words_count = sum(1 for w in word_results if w['status'] == 'matched')
+        wrong_words_count = sum(1 for w in word_results if w['status'] == 'wrong')
+        missed_words_count = sum(1 for w in word_results if w['status'] == 'unread')
+        total_words_count = len(word_results)
+
         return {
             'accuracy': accuracy,
             'partial_accuracy': partial_accuracy,
             'rec_phoneme_count': rec_total,
             'passed': passed,
-            'matched_count': matched,
+            'matched_count': matched_words_count,
+            'wrong_count': wrong_words_count,
+            'missed_count': missed_words_count,
+            'total_words': total_words_count,
             'total_phonemes': total,
             'matched_phonemes': matched,
-            'total_words': total,  # alias backward-compat: Flutter pakai ini sbg 'target ayat'
             'word_results': word_results,
             'makhraj_errors': makhraj_errors,
             'teacher_feedback': feedback,
@@ -580,9 +589,10 @@ class MakhrajEngine:
         for i, arabic_word in enumerate(words_arabic):
             matched = word_matched.get(i, 0)
             total = word_total.get(i, 0)
+            ratio = matched / total if total > 0 else 0
             if total == 0:
                 status = 'unread'
-            elif matched == total:
+            elif ratio >= 0.6:
                 status = 'matched'
             else:
                 status = 'wrong'

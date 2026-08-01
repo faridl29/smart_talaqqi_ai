@@ -183,8 +183,10 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                         continue
 
                     if TarteelASR.is_available():
+                        # Transkripsikan seluruh akumulasi audio yang telah dibaca sejauh ini (hingga max 30s = 960000 bytes)
+                        accumulated_audio = bytes(audio_pcm_buffer[-960000:])
                         raw_transcript, confidence = TarteelASR.transcribe_pcm(
-                            audio_window, return_confidence=False
+                            accumulated_audio, return_confidence=False
                         )
                         # Tarteel output Arabic text dengan tashkeel → langsung dipakai.
                         # Skip kalau empty / cuma punctuation.
@@ -202,17 +204,15 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                         eval_result["model_confidence"] = round(confidence, 3)
                         eval_result["raw_transcript"] = clean
 
-                        target_total = eval_result.get('total_words') or eval_result.get('total_phonemes', 0) or 0
-                        rec_total = eval_result.get('rec_phoneme_count', 0)
-                        eval_result["partial_accuracy"] = eval_result.get('partial_accuracy', 0)
-                        eval_result["progress"] = f"{min(rec_total, target_total)}/{target_total}"
-                        eval_result["transcript_length"] = rec_total
+                        target_total = eval_result.get('total_words', 0)
+                        matched_words = eval_result.get('matched_count', 0)
+                        eval_result["progress"] = f"{matched_words}/{target_total}"
                         eval_result["is_realtime"] = True
 
                         logger.info(
                             f"[WebSocket Stream] Tarteel: '{raw_transcript}' "
-                            f"-> Match: {eval_result.get('matched_count')}/{target_total} "
-                            f"| PartialAcc: {eval_result['partial_accuracy']}% "
+                            f"-> Match Words: {matched_words}/{target_total} "
+                            f"| Accuracy: {eval_result.get('accuracy')}% "
                             f"| Progress: {eval_result['progress']} | Conf: {confidence:.2%}"
                         )
                         await websocket.send_json(eval_result)
