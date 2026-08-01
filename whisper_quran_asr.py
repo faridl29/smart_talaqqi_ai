@@ -59,13 +59,13 @@ class TarteelASR:
             cls._processor = WhisperProcessor.from_pretrained(cls.MODEL_ID)
             cls._model = WhisperForConditionalGeneration.from_pretrained(cls.MODEL_ID)
             cls._model.eval()
-            # Build forced_decoder_ids once at load (suppresses deprecation warning vs mutating config).
+            # Force Arabic, suppress other langs
             try:
-                cls._forced_decoder_ids = cls._processor.get_decoder_prompt_ids(
+                cls._model.config.forced_decoder_ids = cls._processor.get_decoder_prompt_ids(
                     language="ar", task="transcribe"
                 )
             except Exception:
-                cls._forced_decoder_ids = None
+                pass
             logger.info(f"Model '{cls.MODEL_ID}' loaded.")
         except Exception as e:
             logger.error(f"Gagal memuat model Tarteel: {e}")
@@ -115,7 +115,7 @@ class TarteelASR:
             attention_mask = inputs.attention_mask
 
             with torch.no_grad():
-                gen_kwargs = dict(
+                gen_out = model.generate(
                     input_features,
                     attention_mask=attention_mask,
                     max_new_tokens=128,
@@ -124,9 +124,6 @@ class TarteelASR:
                     return_dict_in_generate=True,
                     output_scores=True,
                 )
-                if cls._forced_decoder_ids is not None:
-                    gen_kwargs["forced_decoder_ids"] = cls._forced_decoder_ids
-                gen_out = model.generate(**gen_kwargs)
 
             sequences = gen_out.sequences
             text = cls._processor.batch_decode(
