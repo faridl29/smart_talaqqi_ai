@@ -314,21 +314,28 @@ class MakhrajEngine:
         matched = sum(1 for op, _, _ in ops if op == 'equal')
         total = len(target_tokens)
         rec_total = len(rec_tokens)
-        accuracy = round((matched / total) * 100) if total else 0
-        # Fair partial: matched vs panjang transkrip aktual (bukan target penuh)
         partial_accuracy = round((matched / rec_total) * 100, 1) if rec_total else 0.0
-
         word_results, makhraj_errors = cls._analyze_word_level(
             target_ayah_text, target_tokens, rec_tokens, ops
         )
-
-        passed = accuracy >= 85
-        feedback = cls._generate_feedback(accuracy, passed, len(makhraj_errors))
 
         matched_words_count = sum(1 for w in word_results if w['status'] == 'matched')
         wrong_words_count = sum(1 for w in word_results if w['status'] == 'wrong')
         missed_words_count = sum(1 for w in word_results if w['status'] == 'unread')
         total_words_count = len(word_results)
+
+        if total_words_count > 0:
+            word_acc = (matched_words_count / total_words_count) * 100
+            if len(makhraj_errors) == 0 and matched_words_count == total_words_count:
+                accuracy = 100
+            else:
+                error_penalty = min(40, len(makhraj_errors) * 15)
+                accuracy = max(0, round(word_acc - error_penalty))
+        else:
+            accuracy = 0
+
+        passed = accuracy >= 85
+        feedback = cls._generate_feedback(accuracy, passed, len(makhraj_errors))
 
         return {
             'accuracy': accuracy,
