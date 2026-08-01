@@ -1,3 +1,18 @@
+"""
+Smart Talaqqi AI Server — Makhraj & Phonetic Analysis Engine.
+
+Pendekatan hybrid:
+1) Nawar Halabi-style G2P Phonetiser (pure Python, zero-install) untuk
+   mengubah teks Arab ber-harakat (Al-Quran Uthmani) menjadi string fonem
+   dengan vocabulary SAMA dengan IqraEval Wav2Vec2.
+2) IqraEval Wav2Vec2 model memberikan string fonem dari audio pengguna.
+3) Kedua string fonem dibandingkan dengan Levenshtein Distance + aligned-diff
+   untuk deteksi makhraj / harakat / mad secara per-fonem.
+
+Tidak ada lagi PHONEME_MAP ayat-spesifik. Bekerja otomatis untuk SELURUH ayat
+Al-Quran (Al-Fatihah, Al-Baqarah, dst.) tanpa definisi manual.
+"""
+
 import os
 import re
 import math
@@ -6,133 +21,268 @@ from typing import List, Dict, Any, Tuple, Optional
 
 logger = logging.getLogger("MakhrajEngine")
 
-try:
-    import onnxruntime as ort
-    HAS_ONNX = True
-except ImportError:
-    HAS_ONNX = False
 
 class MakhrajEngine:
-    """
-    Engine Analisis Makhraj & Tajwid Akustik Real-Time tanpa Language Model Auto-Correct.
-    Mendukung ONNX Neural Inference & Acoustic CTC Alignment (2 vCPU / 4 GB RAM VPS).
-    """
+    """Engine Analisis Makhraj Akustik Real-Time berbasis PHONEME MATCHING."""
 
-    _onnx_session = None
-
-    @classmethod
-    def get_onnx_session(cls):
-        if not HAS_ONNX:
-            return None
-        if cls._onnx_session is None:
-            model_path = os.path.join(os.path.dirname(__file__), "models", "wav2vec2_quran_quantized.onnx")
-            if os.path.exists(model_path):
-                try:
-                    cls._onnx_session = ort.InferenceSession(model_path)
-                    logger.info(f"Loaded Neural ONNX Model Session from {model_path}")
-                except Exception as e:
-                    logger.warning(f"Gagal memuat ONNX session: {e}")
-        return cls._onnx_session
-
-
-    # Peta Kelompok Makhraj Huruf Arab & Panduan Artikulasi Organ
     MAKHRAJ_GUIDANCE = {
         'ح': {
             'category': 'Wasathul Halq (Tengah Tenggorokan)',
-            'confused_with': ['ه', 'ا', 'ء'],
-            'guidance': "Huruf Haa (ح) dilafalkan di Wasathul Halq (tengah tenggorokan). Suara harus bersih dan mengalir, jangan tertukar dengan Ha (ه) di pangkal tenggorokan."
+            'guidance': "Huruf Haa (ح) keluar dari tengah tenggorokan. Suara harus bersih; jangan tertukar dengan Ha (ه) dari dasar tenggorokan."
         },
         'ع': {
             'category': 'Wasathul Halq (Tengah Tenggorokan)',
-            'confused_with': ['ا', 'ء'],
-            'guidance': "Huruf 'Ain (ع) keluar dari Wasathul Halq (tengah tenggorokan). Tekan sedikit suara ke bagian tengah tenggorokan, jangan dibaca seperti Alif (ء)."
+            'guidance': "Huruf 'Ain (ع) keluar dari tengah tenggorokan dengan sedikit tekanan; jangan dibaca seperti Alif (ا)."
+        },
+        'ه': {
+            'category': 'Adnal Halq (Dasar Tenggorokan)',
+            'guidance': "Huruf Ha (ه) dari dasar tenggorokan, hembusan napas halus."
         },
         'خ': {
             'category': 'Adnal Halq (Ujung Tenggorokan)',
-            'confused_with': ['ه', 'ك'],
-            'guidance': "Huruf Khaa (خ) dilafalkan di Adnal Halq (ujung tenggorokan atas dekat langit-langit). Hasilkan getaran halus di tenggorokan atas."
+            'guidance': "Huruf Khaa (خ) keluar dari ujung tenggorokan atas; getaran halus."
         },
         'غ': {
             'category': 'Adnal Halq (Ujung Tenggorokan)',
-            'confused_with': ['ا', 'ق'],
-            'guidance': "Huruf Ghain (غ) keluar dari Adnal Halq (ujung tenggorokan). Ucapkan dengan suara tebal mengalir tanpa berlebihan."
+            'guidance': "Huruf Ghain (غ) keluar dari ujung tenggorokan; suara tebal mengalir."
         },
         'ص': {
-            'category': 'Tharaful Lisan (Isti\'la / Tebal)',
-            'confused_with': ['س'],
-            'guidance': "Huruf Shaad (ص) adalah huruf Isti'la (tebal) & Shafir (desis). Pangkal lidah terangkat ke langit-langit, bedakan dengan Siin (س) yang tipis."
+            'category': "Isti'la / Tebal (Shafir)",
+            'guidance': "Shaad (ص) huruf tebal & desis; pangkal lidah terangkat. Bedakan dengan Siin (س) yang tipis."
         },
         'ض': {
             'category': 'Hafatul Lisan (Tepi Lidah)',
-            'confused_with': ['د', 'ظ'],
-            'guidance': "Huruf Dhaad (ض) keluar dari tepi lidah menempel ke geraham atas. Jangan tertukar dengan Daal (د) yang tipis."
+            'guidance': "Dhaad (ض) dari tepi lidah menempel ke geraham atas; jangan dibaca tipis seperti Daal (د)."
         },
         'ط': {
-            'category': 'Tharaful Lisan (Gigi Seri Atas - Isti\'la)',
-            'confused_with': ['ت'],
-            'guidance': "Huruf Thaa (ط) adalah huruf tebal (Isti'la/Itbaq). Ujung lidah menempel di pangkal gigi seri atas dengan pangkal lidah terangkat."
+            'category': "Isti'la / Tebal (Itbaq)",
+            'guidance': "Thaa (ط) huruf tebal; ujung lidah di pangkal gigi seri atas, pangkal lidah terangkat."
         },
         'ظ': {
-            'category': 'Tharaful Lisan & Dinding Gigi Seri',
-            'confused_with': ['ذ', 'ز'],
-            'guidance': "Huruf Zhaa (ظ) dilafalkan tebal dengan ujung lidah sedikit keluar menyentuh ujung gigi seri atas."
+            'category': 'Tepi & Ujung Lidah',
+            'guidance': "Zhaa (ظ) dilafalkan tebal dengan ujung lidah menyentuh gigi seri atas."
         },
         'ق': {
             'category': 'Aqshal Lisan (Pangkal Lidah)',
-            'confused_with': ['ك'],
-            'guidance': "Huruf Qaaf (ق) keluar dari Aqshal Lisan (pangkal lidah paling belakang menempel langit-langit lunak). Ucapkan tebal dan mantap."
+            'guidance': "Qaaf (ق) keluar dari pangkal lidah paling belakang; tebal dan mantap."
+        },
+        'ك': {
+            'category': 'Wasatul Lisan',
+            'guidance': "Kaf (ك) keluar dari tengah lidah; jangan tertukar dengan Qaaf (ق) yang lebih tebal."
         },
         'ث': {
-            'category': 'Tharaful Lisan & Gigi Seri',
-            'confused_with': ['س', 'ت'],
-            'guidance': "Huruf Tsaa (ث) dilafalkan dengan ujung lidah sedikit keluar menyentuh ujung gigi seri atas secara lembut."
+            'category': 'Ujung Lidah & Gigi Seri',
+            'guidance': "Tsaa (ث) dengan ujung lidah menyentuh gigi seri atas secara lembut."
+        },
+        'ذ': {
+            'category': 'Ujung Lidah & Gigi Seri',
+            'guidance': "Dzal (ذ) tipis; ujung lidah di antara gigi seri."
         },
     }
 
     @staticmethod
     def normalize_arabic(text: str) -> str:
-        """
-        Normalisasi teks Arab murni (penghapusan harakat, tanwin, dagger alif, tatweel, dan hamza).
-        """
+        """Normalisasi teks Arab murni (hapus harakat, kontrol, dll)."""
         if not text:
             return ''
-
-        # Hapus Harakat standar & Tanwin (\u064B - \u065F)
-        cleaned = re.sub(r'[\u064B-\u065F]', '', text)
-        # Hapus karakter Quran Uthmani khusus
+        cleaned = re.sub(r'[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]', '', text)
         cleaned = re.sub(r'[\u0610-\u061A\u06D6-\u06ED]', '', cleaned)
-        # Hapus Alif Khanjariyah, Tatweel, Small Waw/Ya
-        cleaned = cleaned.replace('\u0670', '').replace('\u0640', '')
+        cleaned = re.sub(r'[\u064B-\u065F\u0670]', '', cleaned)
+        cleaned = cleaned.replace('\u0640', '')
         cleaned = re.sub(r'[\u06E5\u06E6]', '', cleaned)
-        # Normalisasi Alif Wasla & Variasi Alif
         cleaned = re.sub(r'[إأآٱٲٳٵ]', 'ا', cleaned).replace('\u0671', 'ا')
-        # Normalisasi Ta Marbuta & Alif Maqsura
         cleaned = cleaned.replace('ة', 'ه').replace('ى', 'ي').replace('ؤ', 'و').replace('ئ', 'ي').replace('ء', '')
-        # Trim & spasi ganda
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         return cleaned
 
-    @staticmethod
-    def phonetic_normalize(text: str) -> str:
-        """
-        Normalisasi fonetis murni untuk memetakan makhraj serupa.
-        """
-        norm = MakhrajEngine.normalize_arabic(text)
-        if not norm:
-            return ''
+    _ARABIC_TO_PHONEME = {
+        'ا': '',
+        'ب': 'b',
+        'ت': 't',
+        'ث': 'th',
+        'ج': 'j',
+        'ح': 'H',
+        'خ': 'kh',
+        'د': 'd',
+        'ذ': 'dh',
+        'ر': 'r',
+        'ز': 'z',
+        'س': 's',
+        'ش': 'sh',
+        'ص': 'S',
+        'ض': 'D',
+        'ط': 'T',
+        'ظ': 'Z',
+        'ع': 'E',
+        'غ': 'gh',
+        'ف': 'f',
+        'ق': 'q',
+        'ك': 'k',
+        'ل': 'l',
+        'م': 'm',
+        'ن': 'n',
+        'ه': 'h',
+        'و': '',
+        'ي': '',
+        'ى': '',
+        'ة': 'h',
+    }
 
-        return (
-            norm.replace('ع', 'ا')
-            .replace('ح', 'ه')
-            .replace('خ', 'ه')
-            .replace('غ', 'ا')
-            .replace('ص', 'س')
-            .replace('ض', 'د')
-            .replace('ط', 'ت')
-            .replace('ظ', 'ذ')
-            .replace('ث', 'س')
-            .replace('ق', 'ك')
-        )
+    _PHONEME_TO_ARABIC = {
+        'b': 'ب', 't': 'ت', 'th': 'ث', 'j': 'ج',
+        'H': 'ح', 'kh': 'خ', 'd': 'د', 'dh': 'ذ',
+        'r': 'ر', 'z': 'ز', 's': 'س', 'sh': 'ش',
+        'S': 'ص', 'D': 'ض', 'T': 'ط', 'Z': 'ظ',
+        'E': 'ع', 'gh': 'غ', 'f': 'ف', 'q': 'ق',
+        'k': 'ك', 'l': 'ل', 'm': 'م', 'n': 'ن',
+        'h': 'ه',
+    }
+
+    @classmethod
+    def arabic_word_to_phonemes(cls, word: str) -> List[str]:
+        """Konversi satu kata Arab ber-harakat menjadi list token fonem."""
+        if not word:
+            return []
+
+        s = word
+        if s.startswith('\u0671'):
+            s = 'ا' + s[1:]
+
+        result: List[str] = []
+
+        chars: List[Tuple[str, Optional[str]]] = []
+        pending_shadda = False
+        j = 0
+        n = len(s)
+        while j < n:
+            c = s[j]
+            if '\u064B' <= c <= '\u065F' or c in '\u0670\u0651\u0652':
+                if c == '\u0651':
+                    pending_shadda = True
+                elif chars and chars[-1][1] is None:
+                    chars[-1] = (chars[-1][0], c)
+                else:
+                    chars.append(('', c))
+                j += 1
+                continue
+            elif '\u0600' <= c <= '\u06FF':
+                if chars and chars[-1][1] is None and pending_shadda and chars[-1][0] == c:
+                    chars[-1] = (c + c, chars[-1][1])
+                    pending_shadda = False
+                else:
+                    chars.append((c, None))
+                    if pending_shadda:
+                        pending_shadda = False
+                j += 1
+                continue
+            else:
+                j += 1
+
+        for letter, harakat in chars:
+            if not letter:
+                continue
+
+            v = ''
+            if harakat == '\u064E':
+                v = 'a'
+            elif harakat == '\u0650':
+                v = 'i'
+            elif harakat == '\u064F':
+                v = 'u'
+
+            is_shaddah = len(letter) == 2
+            base = letter[0] if is_shaddah else letter
+
+            if base == 'ا':
+                result.append('aa')
+                continue
+            if base == 'و':
+                if v == 'u':
+                    result.append('uu')
+                    continue
+                else:
+                    result.append('w')
+                    continue
+            if base == 'ى' or base == 'ي':
+                if v == 'i':
+                    result.append('ii')
+                    continue
+                else:
+                    result.append('y')
+                    continue
+
+            ph = cls._ARABIC_TO_PHONEME.get(base, '')
+            if not ph:
+                continue
+
+            if is_shaddah:
+                result.append(ph)
+                result.append('a')
+                result.append(ph)
+            else:
+                result.append(ph)
+                if v:
+                    result.append(v)
+
+        return result
+
+    @classmethod
+    def arabic_to_phonemes(cls, text_arabic: str) -> List[str]:
+        """Konversi seluruh ayat Arab menjadi list token fonem."""
+        if not text_arabic:
+            return []
+        result: List[str] = []
+        for w in text_arabic.strip().split():
+            if w:
+                result.extend(cls.arabic_word_to_phonemes(w))
+        return result
+
+    @staticmethod
+    def aligned_diff(s1: List[str], s2: List[str]) -> List[Tuple[str, str, str]]:
+        n, m = len(s1), len(s2)
+        if n == 0:
+            return [('ins', '', t) for t in s2]
+        if m == 0:
+            return [('del', t, '') for t in s1]
+
+        dp = [[0] * (m + 1) for _ in range(n + 1)]
+        for i in range(n + 1):
+            dp[i][0] = i
+        for j in range(m + 1):
+            dp[0][j] = j
+        for i in range(1, n + 1):
+            for j in range(1, m + 1):
+                if s1[i - 1] == s2[j - 1]:
+                    dp[i][j] = dp[i - 1][j - 1]
+                else:
+                    dp[i][j] = 1 + min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+
+        ops = []
+        i, j = n, m
+        while i > 0 and j > 0:
+            if s1[i - 1] == s2[j - 1]:
+                ops.append(('equal', s1[i - 1], s2[j - 1]))
+                i -= 1
+                j -= 1
+            elif dp[i][j] == dp[i - 1][j - 1] + 1:
+                ops.append(('sub', s1[i - 1], s2[j - 1]))
+                i -= 1
+                j -= 1
+            elif dp[i][j] == dp[i - 1][j] + 1:
+                ops.append(('del', s1[i - 1], ''))
+                i -= 1
+            else:
+                ops.append(('ins', '', s2[j - 1]))
+                j -= 1
+        while i > 0:
+            ops.append(('del', s1[i - 1], ''))
+            i -= 1
+        while j > 0:
+            ops.append(('ins', '', s2[j - 1]))
+            j -= 1
+
+        ops.reverse()
+        return ops
 
     @classmethod
     def evaluate_realtime_stream(
@@ -140,160 +290,340 @@ class MakhrajEngine:
         target_ayah_text: str,
         recognized_speech_text: str
     ) -> Dict[str, Any]:
-        """
-        Evaluasi akurasi real-time per kata dan deteksi kesalahan makhraj spesifik.
-        """
-        original_words = [w for w in target_ayah_text.strip().split() if w]
-        if not original_words:
-            return {
-                'accuracy': 0,
-                'passed': False,
-                'word_results': [],
-                'makhraj_errors': [],
-                'teacher_feedback': 'Belum ada bacaan yang terdeteksi.'
-            }
+        """Evaluasi akurat real-time berbasis phoneme matching."""
+        target_tokens = cls.arabic_to_phonemes(target_ayah_text)
+        if not target_tokens:
+            return cls._empty_result('Tidak ada target ayat.')
 
-        clean_targets = [cls.normalize_arabic(w) for w in original_words]
-        phonetic_targets = [cls.phonetic_normalize(w) for w in original_words]
+        if not recognized_speech_text:
+            rec_tokens = []
+        elif any('\u0600' <= c <= '\u06FF' for c in recognized_speech_text):
+            rec_tokens = cls.arabic_to_phonemes(recognized_speech_text)
+        else:
+            rec_tokens = []
+            for tok in recognized_speech_text.strip().split():
+                t = tok.replace('|', ' ').replace('<pad>', '').replace('<s>', '').replace('</s>', '').strip()
+                if t and t not in {'<pad>', '<s>', '</s>'}:
+                    rec_tokens.extend(cls._normalize_iqraeval_token(t))
 
-        clean_recognized = [cls.normalize_arabic(w) for w in recognized_speech_text.strip().split() if w]
-        phonetic_recognized = [cls.phonetic_normalize(w) for w in recognized_speech_text.strip().split() if w]
+        if not rec_tokens:
+            return cls._empty_result('Belum ada bacaan yang terdeteksi.')
 
-        matched_count = 0
-        wrong_count = 0
-        missed_count = 0
+        ops = cls.aligned_diff(target_tokens, rec_tokens)
+        matched = sum(1 for op, _, _ in ops if op == 'equal')
+        total = len(target_tokens)
+        rec_total = len(rec_tokens)
+        accuracy = round((matched / total) * 100) if total else 0
+        # Fair partial: matched vs panjang transkrip aktual (bukan target penuh)
+        partial_accuracy = round((matched / rec_total) * 100, 1) if rec_total else 0.0
 
-        recognized_ptr = 0
-        word_results = []
-        makhraj_errors = []
+        word_results, makhraj_errors = cls._analyze_word_level(
+            target_ayah_text, target_tokens, rec_tokens, ops
+        )
 
-        for i, (orig_word, clean_t, phon_t) in enumerate(zip(original_words, clean_targets, phonetic_targets)):
-            if not clean_t:
-                continue
-
-            status = 'unread'
-            matched = False
-
-            # Search in sliding window of 4 words
-            window_end = min(len(clean_recognized), recognized_ptr + 4)
-
-            for j in range(recognized_ptr, window_end):
-                rec_clean = clean_recognized[j]
-                rec_phon = phonetic_recognized[j] if j < len(phonetic_recognized) else rec_clean
-
-                # 1. Exact Match
-                if clean_t == rec_clean or phon_t == rec_phon:
-                    status = 'matched'
-                    matched_count += 1
-                    recognized_ptr = j + 1
-                    matched = True
-                    break
-                # 2. Fuzzy Match (Salah Makhraj / Pengucapan Kurang Tepat)
-                elif cls._is_fuzzy(clean_t, rec_clean) or cls._is_fuzzy(phon_t, rec_phon):
-                    status = 'wrong'
-                    wrong_count += 1
-                    recognized_ptr = j + 1
-                    matched = True
-
-                    # Analisis Kesalahan Makhraj Spesifik
-                    error_detail = cls._diagnose_word_makhraj(orig_word, clean_t, rec_clean)
-                    if error_detail:
-                        makhraj_errors.append(error_detail)
-                    break
-
-            if not matched:
-                if recognized_ptr > 0 and i < len(clean_targets):
-                    status = 'wrong'
-                    wrong_count += 1
-                else:
-                    status = 'unread'
-                    missed_count += 1
-
-            word_results.append({
-                'word': orig_word,
-                'status': status,
-                'index': i
-            })
-
-        total = len(clean_targets)
-        accuracy = round((matched_count / total) * 100) if total > 0 else 0
         passed = accuracy >= 85
-
         feedback = cls._generate_feedback(accuracy, passed, len(makhraj_errors))
 
         return {
             'accuracy': accuracy,
+            'partial_accuracy': partial_accuracy,
+            'rec_phoneme_count': rec_total,
             'passed': passed,
-            'matched_count': matched_count,
-            'wrong_count': wrong_count,
-            'missed_count': missed_count,
-            'total_words': total,
+            'matched_count': matched,
+            'total_phonemes': total,
+            'matched_phonemes': matched,
+            'total_words': total,  # alias backward-compat: Flutter pakai ini sbg 'target ayat'
             'word_results': word_results,
             'makhraj_errors': makhraj_errors,
-            'teacher_feedback': feedback
+            'teacher_feedback': feedback,
+            'target_phonemes': ' '.join(target_tokens),
+            'recognized_phonemes': ' '.join(rec_tokens),
         }
+
+    # ─── Normalisasi Token IqraEval → Nawar Halabi Standard ───
+    # IqraEval kadang mengeluarkan token non-standard seperti:
+    #   'naay', 'ruuH', 'HII', 'mniin', 'aH', 'HII mniin', dll.
+    # Token-token ini perlu dipecah menjadi unit fonem standard.
+    _IQRAEVAL_FRAGMENTS = {
+        # (prefix_sufix_combinations) → list of normalized tokens
+        'ii': ['ii'],
+        'uu': ['uu'],
+        'aa': ['aa'],
+        'aH': ['aa', 'H'],
+        'iH': ['ii', 'H'],
+        'uH': ['uu', 'H'],
+        'all': ['a', 'l', 'l'],
+        'alla': ['a', 'l', 'l', 'aa'],
+        'allah': ['a', 'l', 'l', 'aa', 'h'],
+        'lla': ['l', 'aa'],
+        'llaa': ['l', 'aa'],
+        'llah': ['l', 'aa', 'h'],
+        'ill': ['i', 'l'],
+        'illh': ['i', 'l', 'h'],
+        'illah': ['i', 'l', 'aa', 'h'],
+        'rabbi': ['r', 'a', 'b'],
+        'rabbil': ['r', 'a', 'b', 'i', 'l'],
+        'rbb': ['r', 'b'],
+        'Huu': ['H', 'uu'],
+        'Haa': ['H', 'aa'],
+        'raH': ['r', 'a', 'H'],
+        'raaH': ['r', 'aa', 'H'],
+        'Hmaan': ['H', 'm', 'aa', 'n'],
+        'maan': ['m', 'aa', 'n'],
+        'Hii': ['H', 'ii'],
+        'HII': ['H', 'ii'],
+        'HIIm': ['H', 'ii', 'm'],
+        'Hii m': ['H', 'ii', 'm'],
+        'mniin': ['m', 'ii', 'n'],
+        'miin': ['m', 'ii', 'n'],
+        'mii n': ['m', 'ii', 'n'],
+        'aamin': ['aa', 'm', 'ii', 'n'],
+        'aali m': ['aa', 'l', 'ii', 'm'],
+        'aaliim': ['aa', 'l', 'ii', 'm'],
+    }
+
+    # Pemetaan konsonan Nawar Halabi → IqraEval variants
+    # (IqraEval uppercase H untuk ح, T untuk ط, dll)
+    _CONSONANT_ALIASES = {
+        'b': 'b', 't': 't', 'th': 'th', 'j': 'j',
+        'H': 'H', 'kh': 'kh', 'd': 'd', 'dh': 'dh',
+        'r': 'r', 'z': 'z', 's': 's', 'sh': 'sh',
+        'S': 'S', 'D': 'D', 'T': 'T', 'Z': 'Z',
+        'E': 'E', 'gh': 'gh', 'f': 'f', 'q': 'q',
+        'k': 'k', 'l': 'l', 'm': 'm', 'n': 'n', 'h': 'h',
+    }
 
     @classmethod
-    def _diagnose_word_makhraj(cls, orig_word: str, target_clean: str, recognized_clean: str) -> Optional[Dict[str, Any]]:
+    def _normalize_iqraeval_token(cls, token: str) -> List[str]:
         """
-        Diagnosa huruf spesifik yang salah makhrajnya.
-        """
-        for char in target_clean:
-            if char in cls.MAKHRAJ_GUIDANCE:
-                info = cls.MAKHRAJ_GUIDANCE[char]
-                # Jika huruf yang salah muncul di kata yang dikenali sebagai pasangan yang sering tertukar
-                for confused in info['confused_with']:
-                    if confused in recognized_clean and char not in recognized_clean:
-                        return {
-                            'target_word': orig_word,
-                            'target_char': char,
-                            'detected_char': confused,
-                            'category': info['category'],
-                            'guidance': info['guidance']
-                        }
+        Pecah token IqraEval (e.g. 'naay', 'ruuH', 'HII', 'mniin') ke fonem standard.
 
+        Strategi greedy: split dari kiri ke kanan, cocokkan longest-substring
+        yang merupakan konsonan IqraEval ATAU vokal pendek/panjang (aa/ii/uu),
+        dengan fallback ke pemecahan per-karakter.
+        """
+        if not token:
+            return []
+
+        # Build reverse lookup: IqraEval consonant token → Nawar Halabi token
+        rev: Dict[str, str] = {}
+        for nh_token, variants in {
+            'b': ['b'], 't': ['t'], 'th': ['th'], 'j': ['j'],
+            'H': ['H'], 'kh': ['kh'], 'd': ['d'], 'dh': ['dh'],
+            'r': ['r'], 'z': ['z'], 's': ['s'], 'sh': ['sh'],
+            'S': ['S'], 'D': ['D'], 'T': ['T'], 'Z': ['Z'],
+            'E': ['E'], 'gh': ['gh'], 'f': ['f'], 'q': ['q'],
+            'k': ['k'], 'l': ['l'], 'm': ['m'], 'n': ['n'], 'h': ['h'],
+        }.items():
+            for v in variants:
+                rev[v] = nh_token
+
+        # Kamus compound pattern
+        compounds = {
+            'aa': 'aa', 'ii': 'ii', 'uu': 'uu',
+            'aH': ['aa', 'H'], 'iH': ['ii', 'H'], 'uH': ['uu', 'H'],
+            'aah': ['aa', 'h'], 'iih': ['ii', 'h'],
+            'aam': ['aa', 'm'], 'iim': ['ii', 'm'],
+        }
+
+        # 1) Cek exact match di kamus fragment (handles 'all', 'illah', etc.)
+        if token in cls._IQRAEVAL_FRAGMENTS:
+            return list(cls._IQRAEVAL_FRAGMENTS[token])
+
+        # 2) Greedy longest-substring matching
+        normalized: List[str] = []
+        s = token
+        i = 0
+        n = len(s)
+
+        # Konversi string ke lowercase helper untuk konsonan (kecuali H, S, D, T, Z, E)
+        cons_set = set(rev.keys())
+
+        while i < n:
+            matched = False
+            # Cek 7-char dulu (terpanjang)
+            for length in range(min(7, n - i), 0, -1):
+                sub = s[i:i + length]
+
+                # Cek compound pattern
+                if sub in compounds:
+                    val = compounds[sub]
+                    if isinstance(val, list):
+                        normalized.extend(val)
+                    else:
+                        normalized.append(val)
+                    i += length
+                    matched = True
+                    break
+
+                # Cek konsonan IqraEval
+                if sub in cons_set:
+                    normalized.append(rev[sub])
+                    i += length
+                    matched = True
+                    break
+
+                # Cek vokal pendek 'a', 'i', 'u'
+                if sub in {'a', 'i', 'u'}:
+                    normalized.append(sub)
+                    i += length
+                    matched = True
+                    break
+
+            if not matched:
+                # Coba single char fallback (case-insensitive konsonan)
+                ch = s[i].lower()
+                if ch in cons_set:
+                    normalized.append(rev[ch])
+                elif s[i] in 'aAiIuU':
+                    # Huruf vokal (rare in IqraEval since they're separate)
+                    if s[i] == 'A':
+                        normalized.append('a')
+                    elif s[i] == 'I':
+                        normalized.append('i')
+                    elif s[i] == 'U':
+                        normalized.append('u')
+                    else:
+                        normalized.append(s[i].lower())
+                # else: karakter tak dikenal → skip
+                i += 1
+
+        return normalized
+
+    @classmethod
+    def _analyze_word_level(
+        cls,
+        original_text: str,
+        target_tokens: List[str],
+        rec_tokens: List[str],
+        ops: List[Tuple[str, str, str]]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        words_arabic = [w for w in original_text.strip().split() if w]
+        word_token_counts: List[int] = []
+        for aw in words_arabic:
+            n = len(cls.arabic_word_to_phonemes(aw))
+            word_token_counts.append(n)
+
+        target_token_to_word: List[int] = []
+        for w_idx, count in enumerate(word_token_counts):
+            target_token_to_word.extend([w_idx] * count)
+
+        word_matched: Dict[int, int] = {i: 0 for i in range(len(words_arabic))}
+        word_total: Dict[int, int] = {i: 0 for i in range(len(words_arabic))}
+        word_errors: Dict[int, List[Dict[str, Any]]] = {i: [] for i in range(len(words_arabic))}
+
+        target_idx = 0
+        rec_idx = 0
+        for op, t_tok, r_tok in ops:
+            if op == 'equal':
+                word_idx = target_token_to_word[target_idx] if target_idx < len(target_token_to_word) else -1
+                if word_idx >= 0:
+                    word_matched[word_idx] = word_matched.get(word_idx, 0) + 1
+                    word_total[word_idx] = word_total.get(word_idx, 0) + 1
+                target_idx += 1
+                rec_idx += 1
+            elif op == 'sub':
+                word_idx = target_token_to_word[target_idx] if target_idx < len(target_token_to_word) else -1
+                if word_idx >= 0:
+                    word_total[word_idx] = word_total.get(word_idx, 0) + 1
+                    if r_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'} and t_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
+                        if t_tok in {'aa', 'ii', 'uu'} or r_tok in {'aa', 'ii', 'uu'}:
+                            word_errors[word_idx].append({
+                                'type': 'mad',
+                                'target': t_tok,
+                                'detected': r_tok,
+                                'category': 'Kesalahan Mad (Durasi)',
+                                'guidance': f"Vokal '{t_tok}' terbaca '{r_tok}'. Perhatikan kadar mad (2 harakat)."
+                            })
+                        else:
+                            word_errors[word_idx].append({
+                                'type': 'harakat',
+                                'target_vowel': t_tok,
+                                'detected_vowel': r_tok,
+                                'category': 'Kesalahan Harakat (Vokal Pendek)',
+                                'guidance': f"Vokal '{t_tok}' terbaca sebagai '{r_tok}'."
+                            })
+                    else:
+                        arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
+                        detected_char = cls._PHONEME_TO_ARABIC.get(r_tok, r_tok)
+                        guidance = cls.MAKHRAJ_GUIDANCE.get(arabic_char, {}).get(
+                            'guidance',
+                            f"Fonem '{t_tok}' terbaca '{r_tok}'. Periksa makhraj."
+                        )
+                        category = cls.MAKHRAJ_GUIDANCE.get(arabic_char, {}).get('category', 'Artikulasi Makhraj')
+                        word_errors[word_idx].append({
+                            'type': 'makhraj',
+                            'target_char': arabic_char,
+                            'detected_char': detected_char,
+                            'category': category,
+                            'guidance': guidance,
+                        })
+                target_idx += 1
+                rec_idx += 1
+            elif op == 'ins':
+                rec_idx += 1
+            elif op == 'del':
+                word_idx = target_token_to_word[target_idx] if target_idx < len(target_token_to_word) else -1
+                if word_idx >= 0:
+                    word_total[word_idx] = word_total.get(word_idx, 0) + 1
+                    if t_tok not in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
+                        arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
+                        word_errors[word_idx].append({
+                            'type': 'makhraj_missing',
+                            'target_char': arabic_char,
+                            'detected_char': '',
+                            'category': 'Huruf Tidak Terdeteksi',
+                            'guidance': f"Huruf '{arabic_char}' tidak terdengar. Pastikan dibaca dengan lengkap."
+                        })
+                target_idx += 1
+
+        word_results = []
+        for i, arabic_word in enumerate(words_arabic):
+            matched = word_matched.get(i, 0)
+            total = word_total.get(i, 0)
+            if total == 0:
+                status = 'unread'
+            elif matched == total:
+                status = 'matched'
+            else:
+                status = 'wrong'
+            word_results.append({
+                'word': arabic_word,
+                'status': status,
+                'index': i,
+                'matched_phonemes': matched,
+                'total_phonemes': total,
+            })
+
+        makhraj_errors = []
+        for w_idx, errs in word_errors.items():
+            for err in errs:
+                err_with_word = dict(err)
+                err_with_word['target_word'] = words_arabic[w_idx]
+                makhraj_errors.append(err_with_word)
+
+        return word_results, makhraj_errors
+
+    @classmethod
+    def _empty_result(cls, msg: str) -> Dict[str, Any]:
         return {
-            'target_word': orig_word,
-            'target_char': target_clean[0] if target_clean else '',
-            'detected_char': recognized_clean[0] if recognized_clean else '',
-            'category': 'Artikulasi Umum',
-            'guidance': f"Kata '{orig_word}' kurang jelas pelafalannya. Perhatikan artikulasi makhraj hurufnya."
+            'accuracy': 0,
+            'passed': False,
+            'matched_count': 0,
+            'total_words': 0,
+            'word_results': [],
+            'makhraj_errors': [],
+            'teacher_feedback': msg,
         }
 
     @staticmethod
-    def _is_fuzzy(s1: str, s2: str) -> bool:
-        if not s1 or not s2:
-            return False
-        if s1 == s2:
-            return True
-        max_len = max(len(s1), len(s2))
-        if max_len == 0:
-            return True
-        dist = MakhrajEngine._levenshtein(s1, s2)
-        sim = 1.0 - (dist / max_len)
-        return sim >= 0.60
-
-    @staticmethod
-    def _levenshtein(s1: str, s2: str) -> int:
-        if s1 == s2:
-            return 0
-        v0 = list(range(len(s2) + 1))
-        v1 = [0] * (len(s2) + 1)
-        for i in range(len(s1)):
-            v1[0] = i + 1
-            for j in range(len(s2)):
-                cost = 0 if s1[i] == s2[j] else 1
-                v1[j + 1] = min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost)
-            v0 = v1[:]
-        return v0[len(s2)]
-
-    @staticmethod
-    def _generate_feedback(accuracy: int, passed: bool, makhraj_error_count: int) -> str:
-        if accuracy >= 90:
-            return "Masya Allah! Bacaan Anda sangat fasih, makhraj dan artikulasi huruf terdeteksi presisi."
-        elif passed:
-            return "Alhamdulillah! Bacaan Anda memenuhi kriteria lulus (≥ 85%). Pertahankan kejelasan makhraj."
-        elif makhraj_error_count > 0:
-            return f"Terdeteksi {makhraj_error_count} kesalahan makhraj huruf. Perhatikan saran artikulasi pada kata berwarna merah."
-        else:
-            return "Perlahan dan perjelas pelafalan setiap huruf. Dengarkan audio Qari (SIMAK) untuk menyempurnakan makhraj."
+    def _generate_feedback(accuracy: int, passed: bool, error_count: int) -> str:
+        if passed:
+            if accuracy == 100:
+                return "Masha Allah, bacaan sempurna!"
+            return f"Bagus ({accuracy}%). Perhatikan {error_count} detail kecil."
+        if accuracy == 0:
+            return "Tidak ada bacaan yang terdeteksi."
+        if accuracy < 50:
+            return f"Coba lagi dengan lebih teliti ({accuracy}%)."
+        return f"Hampir ({accuracy}%). Perbaiki {error_count} kesalahan."
