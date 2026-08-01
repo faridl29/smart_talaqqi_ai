@@ -625,12 +625,14 @@ class MakhrajEngine:
             matched = word_matched.get(i, 0)
             total = word_total.get(i, 0)
             ratio = matched / total if total > 0 else 0
+            has_error = len(word_errors.get(i, [])) > 0
+
             if total == 0:
                 status = 'unread'
-            elif ratio >= 0.6:
-                status = 'matched'
-            else:
+            elif has_error or ratio < 0.75:
                 status = 'wrong'
+            else:
+                status = 'matched'
             word_results.append({
                 'word': arabic_word,
                 'status': status,
