@@ -379,6 +379,7 @@ class MakhrajEngine:
             'teacher_feedback': feedback,
             'target_phonemes': ' '.join(target_tokens),
             'recognized_phonemes': ' '.join(rec_tokens),
+            'recognized_speech_text': recognized_speech_text,
         }
 
     # ─── Normalisasi Token IqraEval → Nawar Halabi Standard ───

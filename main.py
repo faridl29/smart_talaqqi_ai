@@ -151,6 +151,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                                 target_ayah_text=target_ayah_text,
                                 recognized_speech_text=raw_transcript
                             )
+                            final_result["raw_transcript"] = raw_transcript
+                            final_result["recognized_speech_text"] = raw_transcript
                             final_result["source"] = "tarteel"
                             final_result["status"] = "completed"
                             final_result["model_confidence"] = round(confidence, 3)
