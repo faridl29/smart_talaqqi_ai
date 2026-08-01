@@ -351,12 +351,14 @@ class MakhrajEngine:
         total_words_count = len(word_results)
 
         if total_words_count > 0:
-            word_acc = (matched_words_count / total_words_count) * 100
             if len(makhraj_errors) == 0 and matched_words_count == total_words_count:
                 accuracy = 100
             else:
-                error_penalty = min(40, len(makhraj_errors) * 15)
-                accuracy = max(0, round(word_acc - error_penalty))
+                word_score = (matched_words_count / total_words_count) * 100
+                phoneme_score = (matched / total) * 100 if total > 0 else 0.0
+                raw_score = (0.7 * word_score) + (0.3 * phoneme_score)
+                error_penalty = min(20, len(makhraj_errors) * 4)
+                accuracy = max(5, round(raw_score - error_penalty))
         else:
             accuracy = 0
 
