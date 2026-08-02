@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Smart Talaqqi AI Server",
-    description="Real-Time WebSocket ASR & Makhraj AI Server dengan IqraEval Wav2Vec2-300M",
+    description="Real-Time WebSocket ASR & Makhraj AI Server dengan Tarteel Whisper Tiny",
     version="2.2.0",
     lifespan=lifespan
 )
@@ -214,22 +214,27 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                         if not clean or not any('\u0600' <= c <= '\u06FF' for c in clean):
                             continue
 
+                        is_trailing_silence = not has_spoken_recently
                         eval_result = MakhrajEngine.evaluate_realtime_stream(
                             target_ayah_text=target_ayah_text,
                             recognized_speech_text=clean
                         )
-                        eval_result["status"] = "evaluating"
+                        target_total = eval_result.get('total_words', 0)
+                        matched_words = eval_result.get('matched_count', 0)
+
+                        if is_trailing_silence and target_total > 0 and matched_words >= max(1, int(target_total * 0.75)):
+                            eval_result["status"] = "auto_completed"
+                        else:
+                            eval_result["status"] = "evaluating"
+
                         eval_result["source"] = "tarteel"
                         eval_result["model_confidence"] = round(confidence, 3)
                         eval_result["raw_transcript"] = clean
-
-                        target_total = eval_result.get('total_words', 0)
-                        matched_words = eval_result.get('matched_count', 0)
                         eval_result["progress"] = f"{matched_words}/{target_total}"
                         eval_result["is_realtime"] = True
 
                         logger.info(
-                            f"[WebSocket Stream] Tarteel: '{raw_transcript}' "
+                            f"[WebSocket Stream] Tarteel ({eval_result['status']}): '{raw_transcript}' "
                             f"-> Match Words: {matched_words}/{target_total} "
                             f"| Accuracy: {eval_result.get('accuracy')}% "
                             f"| Progress: {eval_result['progress']} | Conf: {confidence:.2%}"

@@ -324,14 +324,8 @@ class MakhrajEngine:
 
         if not recognized_speech_text:
             rec_tokens = []
-        elif any('\u0600' <= c <= '\u06FF' for c in recognized_speech_text):
-            rec_tokens = cls.arabic_to_phonemes(recognized_speech_text)
         else:
-            rec_tokens = []
-            for tok in recognized_speech_text.strip().split():
-                t = tok.replace('|', ' ').replace('<pad>', '').replace('<s>', '').replace('</s>', '').strip()
-                if t and t not in {'<pad>', '<s>', '</s>'}:
-                    rec_tokens.extend(cls._normalize_iqraeval_token(t))
+            rec_tokens = cls.arabic_to_phonemes(recognized_speech_text)
 
         if not rec_tokens:
             return cls._empty_result('Belum ada bacaan yang terdeteksi.')
@@ -365,11 +359,31 @@ class MakhrajEngine:
         passed = accuracy >= 85
         feedback = cls._generate_feedback(accuracy, passed, len(makhraj_errors))
 
+        # Hitung Star Rating (1, 2, atau 3 bintang)
+        if accuracy >= 90 and len(makhraj_errors) == 0:
+            stars = 3
+        elif accuracy >= 75:
+            stars = 2
+        else:
+            stars = 1
+
+        # Tentukan Kata Utama yang Perlu Di-Drill (jika ada kesalahan)
+        primary_drill_word = ""
+        if makhraj_errors:
+            primary_drill_word = makhraj_errors[0].get('target_word', '')
+        if not primary_drill_word:
+            for w in word_results:
+                if w.get('status') == 'wrong':
+                    primary_drill_word = w.get('word', '')
+                    break
+
         return {
             'accuracy': accuracy,
             'partial_accuracy': partial_accuracy,
             'rec_phoneme_count': rec_total,
             'passed': passed,
+            'stars': stars,
+            'primary_drill_word': primary_drill_word,
             'matched_count': matched_words_count,
             'wrong_count': wrong_words_count,
             'missed_count': missed_words_count,
@@ -383,156 +397,6 @@ class MakhrajEngine:
             'recognized_phonemes': ' '.join(rec_tokens),
             'recognized_speech_text': recognized_speech_text,
         }
-
-    # ─── Normalisasi Token IqraEval → Nawar Halabi Standard ───
-    # IqraEval kadang mengeluarkan token non-standard seperti:
-    #   'naay', 'ruuH', 'HII', 'mniin', 'aH', 'HII mniin', dll.
-    # Token-token ini perlu dipecah menjadi unit fonem standard.
-    _IQRAEVAL_FRAGMENTS = {
-        # (prefix_sufix_combinations) → list of normalized tokens
-        'ii': ['ii'],
-        'uu': ['uu'],
-        'aa': ['aa'],
-        'aH': ['aa', 'H'],
-        'iH': ['ii', 'H'],
-        'uH': ['uu', 'H'],
-        'all': ['a', 'l', 'l'],
-        'alla': ['a', 'l', 'l', 'aa'],
-        'allah': ['a', 'l', 'l', 'aa', 'h'],
-        'lla': ['l', 'aa'],
-        'llaa': ['l', 'aa'],
-        'llah': ['l', 'aa', 'h'],
-        'ill': ['i', 'l'],
-        'illh': ['i', 'l', 'h'],
-        'illah': ['i', 'l', 'aa', 'h'],
-        'rabbi': ['r', 'a', 'b'],
-        'rabbil': ['r', 'a', 'b', 'i', 'l'],
-        'rbb': ['r', 'b'],
-        'Huu': ['H', 'uu'],
-        'Haa': ['H', 'aa'],
-        'raH': ['r', 'a', 'H'],
-        'raaH': ['r', 'aa', 'H'],
-        'Hmaan': ['H', 'm', 'aa', 'n'],
-        'maan': ['m', 'aa', 'n'],
-        'Hii': ['H', 'ii'],
-        'HII': ['H', 'ii'],
-        'HIIm': ['H', 'ii', 'm'],
-        'Hii m': ['H', 'ii', 'm'],
-        'mniin': ['m', 'ii', 'n'],
-        'miin': ['m', 'ii', 'n'],
-        'mii n': ['m', 'ii', 'n'],
-        'aamin': ['aa', 'm', 'ii', 'n'],
-        'aali m': ['aa', 'l', 'ii', 'm'],
-        'aaliim': ['aa', 'l', 'ii', 'm'],
-    }
-
-    # Pemetaan konsonan Nawar Halabi → IqraEval variants
-    # (IqraEval uppercase H untuk ح, T untuk ط, dll)
-    _CONSONANT_ALIASES = {
-        'b': 'b', 't': 't', 'th': 'th', 'j': 'j',
-        'H': 'H', 'kh': 'kh', 'd': 'd', 'dh': 'dh',
-        'r': 'r', 'z': 'z', 's': 's', 'sh': 'sh',
-        'S': 'S', 'D': 'D', 'T': 'T', 'Z': 'Z',
-        'E': 'E', 'gh': 'gh', 'f': 'f', 'q': 'q',
-        'k': 'k', 'l': 'l', 'm': 'm', 'n': 'n', 'h': 'h',
-    }
-
-    @classmethod
-    def _normalize_iqraeval_token(cls, token: str) -> List[str]:
-        """
-        Pecah token IqraEval (e.g. 'naay', 'ruuH', 'HII', 'mniin') ke fonem standard.
-
-        Strategi greedy: split dari kiri ke kanan, cocokkan longest-substring
-        yang merupakan konsonan IqraEval ATAU vokal pendek/panjang (aa/ii/uu),
-        dengan fallback ke pemecahan per-karakter.
-        """
-        if not token:
-            return []
-
-        # Build reverse lookup: IqraEval consonant token → Nawar Halabi token
-        rev: Dict[str, str] = {}
-        for nh_token, variants in {
-            'b': ['b'], 't': ['t'], 'th': ['th'], 'j': ['j'],
-            'H': ['H'], 'kh': ['kh'], 'd': ['d'], 'dh': ['dh'],
-            'r': ['r'], 'z': ['z'], 's': ['s'], 'sh': ['sh'],
-            'S': ['S'], 'D': ['D'], 'T': ['T'], 'Z': ['Z'],
-            'E': ['E'], 'gh': ['gh'], 'f': ['f'], 'q': ['q'],
-            'k': ['k'], 'l': ['l'], 'm': ['m'], 'n': ['n'], 'h': ['h'],
-        }.items():
-            for v in variants:
-                rev[v] = nh_token
-
-        # Kamus compound pattern
-        compounds = {
-            'aa': 'aa', 'ii': 'ii', 'uu': 'uu',
-            'aH': ['aa', 'H'], 'iH': ['ii', 'H'], 'uH': ['uu', 'H'],
-            'aah': ['aa', 'h'], 'iih': ['ii', 'h'],
-            'aam': ['aa', 'm'], 'iim': ['ii', 'm'],
-        }
-
-        # 1) Cek exact match di kamus fragment (handles 'all', 'illah', etc.)
-        if token in cls._IQRAEVAL_FRAGMENTS:
-            return list(cls._IQRAEVAL_FRAGMENTS[token])
-
-        # 2) Greedy longest-substring matching
-        normalized: List[str] = []
-        s = token
-        i = 0
-        n = len(s)
-
-        # Konversi string ke lowercase helper untuk konsonan (kecuali H, S, D, T, Z, E)
-        cons_set = set(rev.keys())
-
-        while i < n:
-            matched = False
-            # Cek 7-char dulu (terpanjang)
-            for length in range(min(7, n - i), 0, -1):
-                sub = s[i:i + length]
-
-                # Cek compound pattern
-                if sub in compounds:
-                    val = compounds[sub]
-                    if isinstance(val, list):
-                        normalized.extend(val)
-                    else:
-                        normalized.append(val)
-                    i += length
-                    matched = True
-                    break
-
-                # Cek konsonan IqraEval
-                if sub in cons_set:
-                    normalized.append(rev[sub])
-                    i += length
-                    matched = True
-                    break
-
-                # Cek vokal pendek 'a', 'i', 'u'
-                if sub in {'a', 'i', 'u'}:
-                    normalized.append(sub)
-                    i += length
-                    matched = True
-                    break
-
-            if not matched:
-                # Coba single char fallback (case-insensitive konsonan)
-                ch = s[i].lower()
-                if ch in cons_set:
-                    normalized.append(rev[ch])
-                elif s[i] in 'aAiIuU':
-                    # Huruf vokal (rare in IqraEval since they're separate)
-                    if s[i] == 'A':
-                        normalized.append('a')
-                    elif s[i] == 'I':
-                        normalized.append('i')
-                    elif s[i] == 'U':
-                        normalized.append('u')
-                    else:
-                        normalized.append(s[i].lower())
-                # else: karakter tak dikenal → skip
-                i += 1
-
-        return normalized
 
     @classmethod
     def _analyze_word_level(
