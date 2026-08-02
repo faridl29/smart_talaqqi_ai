@@ -2,6 +2,14 @@
 # ^ Shebang: agar script selalu pakai pyenv Python yang punya torch/transformers.
 
 import os
+
+# Load .env file jika ada (safe fallback)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["OMP_NUM_THREADS"] = "4"
 os.environ["OPENBLAS_NUM_THREADS"] = "4"
@@ -105,13 +113,13 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
     audio_pcm_buffer = bytearray()
     has_spoken_recently = False
 
-    # Throttle: evaluasi setiap ~0.3 detik audio (16kHz 16-bit = 32000 bytes/sec)
+    # Stream Tuning membaca dari .env (dengan fallback aman)
     last_audio_eval_size = 0
-    MIN_BUFFER_BYTES = 9600           # mulai evaluasi setelah ~0.3 detik
-    AUDIO_EVAL_INTERVAL_BYTES = 9600  # interval antar eval ~0.3 detik
+    MIN_BUFFER_BYTES = int(os.getenv("MIN_BUFFER_BYTES", "4800"))
+    AUDIO_EVAL_INTERVAL_BYTES = int(os.getenv("AUDIO_EVAL_INTERVAL_BYTES", "4800"))
     EVAL_WINDOW_BYTES = 32000         # VAD check 1.0 detik terakhir
     STREAM_WINDOW_BYTES = 1024000     # ~32 detik akumulasi audio (full recitation context)
-    VAD_RMS_THRESHOLD = 500           # int16 RMS minimum
+    VAD_RMS_THRESHOLD = int(os.getenv("VAD_RMS_THRESHOLD", "450"))
 
     def _has_speech(pcm: bytes) -> bool:
         if not pcm:
@@ -254,4 +262,6 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)

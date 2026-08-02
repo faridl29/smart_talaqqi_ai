@@ -6,3 +6,4 @@ pydantic>=2.0.0
 huggingface_hub>=0.21.0
 transformers>=4.40,<4.50
 torch>=2.0,<2.4
+python-dotenv>=1.0.0

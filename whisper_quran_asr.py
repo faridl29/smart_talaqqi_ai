@@ -20,6 +20,13 @@ except ImportError:
     pass
 
 
+import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 class TarteelASR:
     """
     Wrapper transformers + tarteel-ai/whisper-tiny-ar-quran.
@@ -27,7 +34,7 @@ class TarteelASR:
     License: Apache-2.0 (model), Quran data MIT/Tarteel.
     """
 
-    MODEL_ID = "tarteel-ai/whisper-tiny-ar-quran"
+    MODEL_ID = os.getenv("MODEL_ID", "tarteel-ai/whisper-tiny-ar-quran")
 
     _model = None
     _processor = None
