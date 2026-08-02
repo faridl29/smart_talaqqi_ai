@@ -460,27 +460,45 @@ class MakhrajEngine:
                 word_idx = target_token_to_word[target_idx] if target_idx < len(target_token_to_word) else -1
                 if word_idx >= 0:
                     word_total[word_idx] = word_total.get(word_idx, 0) + 1
+                    target_w = words_arabic[word_idx]
+                    
+                    vowel_names = {
+                        'a': 'Fathah (a)',
+                        'i': 'Kasrah (i)',
+                        'u': 'Dhommah (u)',
+                        'aa': 'Mad Fathah (aa)',
+                        'ii': 'Mad Kasrah (ii)',
+                        'uu': 'Mad Dhommah (uu)',
+                    }
+
                     if r_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'} and t_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
+                        t_name = vowel_names.get(t_tok, t_tok)
+                        r_name = vowel_names.get(r_tok, r_tok)
                         if t_tok in {'aa', 'ii', 'uu'} or r_tok in {'aa', 'ii', 'uu'}:
                             word_errors[word_idx].append({
                                 'type': 'mad',
                                 'target': t_tok,
                                 'detected': r_tok,
+                                'target_char': t_name,
+                                'detected_char': r_name,
                                 'category': 'Kesalahan Mad (Durasi)',
-                                'guidance': f"Vokal '{t_tok}' terbaca '{r_tok}'. Perhatikan kadar mad (2 harakat)."
+                                'guidance': f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Perhatikan durasi mad (2 harakat)."
                             })
                         else:
                             word_errors[word_idx].append({
                                 'type': 'harakat',
                                 'target_vowel': t_tok,
                                 'detected_vowel': r_tok,
-                                'category': 'Kesalahan Harakat (Vokal Pendek)',
-                                'guidance': f"Vokal '{t_tok}' terbaca sebagai '{r_tok}'."
+                                'target_char': t_name,
+                                'detected_char': r_name,
+                                'category': 'Kesalahan Harakat (Vokal)',
+                                'guidance': f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Pastikan dibaca dengan harakat {t_name} yang jelas."
                             })
+                    else:
                         arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
                         detected_char = cls._PHONEME_TO_ARABIC.get(r_tok, r_tok)
                         info = cls.MAKHRAJ_GUIDANCE.get(arabic_char, {})
-                        guidance = info.get('guidance', f"Fonem '{t_tok}' terbaca '{r_tok}'. Periksa makhraj.")
+                        guidance = info.get('guidance', f"Pada kata '{target_w}', huruf '{arabic_char}' terucap mirip '{detected_char}'. Periksa makhraj.")
                         category = info.get('category', 'Artikulasi Makhraj')
                         anatomy = info.get('anatomy', 'Perhatikan posisi lidah dan rongga tenggorokan saat melafalkan huruf.')
                         tajweed_rule = info.get('tajweed_rule', 'Sifat & Makhraj Huruf')
