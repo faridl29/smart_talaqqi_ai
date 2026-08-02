@@ -9,8 +9,15 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
+      - HF_HOME=/root/.cache/huggingface
+    volumes:
+      - .:/app
+      - hf_cache:/root/.cache
     deploy:
       resources:
         limits:
           cpus: '2.0'
-          memory: 2048M
+          memory: 3500M
+
+volumes:
+  hf_cache:

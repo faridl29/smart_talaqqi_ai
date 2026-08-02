@@ -14,11 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Pre-download tarteel-ai/whisper-tiny-ar-quran during build (tiny ~ 75MB, Apache-2.0)
-RUN python -c "from huggingface_hub import snapshot_download; snapshot_download('tarteel-ai/whisper-tiny-ar-quran')" || true
-
+RUN pip install --no-cache-dir --default-timeout=100 -r requirements.txt
 
 # Copy application files
 COPY . .

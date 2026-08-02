@@ -312,12 +312,24 @@ class MakhrajEngine:
         return ops
 
     @classmethod
+    def _word_similarity(cls, w1: str, w2: str) -> float:
+        """Similarity [0.0, 1.0] antara 2 kata Arab berdasarkan Skeleton Normalized."""
+        n1 = cls.normalize_arabic(w1)
+        n2 = cls.normalize_arabic(w2)
+        if not n1 or not n2:
+            return 0.0
+        if n1 == n2:
+            return 1.0
+        import difflib
+        return difflib.SequenceMatcher(None, n1, n2).ratio()
+
+    @classmethod
     def evaluate_realtime_stream(
         cls,
         target_ayah_text: str,
         recognized_speech_text: str
     ) -> Dict[str, Any]:
-        """Evaluasi akurat real-time berbasis phoneme matching."""
+        """Evaluasi akurat real-time berbasis phoneme matching + word anchor alignment."""
         target_tokens = cls.arabic_to_phonemes(target_ayah_text)
         if not target_tokens:
             return cls._empty_result('Tidak ada target ayat.')
@@ -339,20 +351,31 @@ class MakhrajEngine:
             target_ayah_text, target_tokens, rec_tokens, ops
         )
 
+        target_words_list = [w for w in target_ayah_text.strip().split() if w]
+        rec_words_list = [w for w in recognized_speech_text.strip().split() if w]
+        matched_target_indices = set()
+
+        for t_idx, t_w in enumerate(target_words_list):
+            for r_w in rec_words_list:
+                sim = cls._word_similarity(t_w, r_w)
+                if sim >= 0.75:
+                    matched_target_indices.add(t_idx)
+                    break
+
+        total_words_count = len(target_words_list)
         matched_words_count = sum(1 for w in word_results if w['status'] == 'matched')
         wrong_words_count = sum(1 for w in word_results if w['status'] == 'wrong')
-        missed_words_count = sum(1 for w in word_results if w['status'] == 'unread')
-        total_words_count = len(word_results)
+        missed_words_count = total_words_count - matched_words_count - wrong_words_count
 
         if total_words_count > 0:
             if len(makhraj_errors) == 0 and matched_words_count == total_words_count:
                 accuracy = 100
             else:
+                # Akurasi berbasis persentase kata yang BENAR-BENAR FASIH (100% makhraj & harakat a/i/u benar)
                 word_score = (matched_words_count / total_words_count) * 100
-                phoneme_score = (matched / total) * 100 if total > 0 else 0.0
-                raw_score = (0.7 * word_score) + (0.3 * phoneme_score)
-                error_penalty = min(20, len(makhraj_errors) * 4)
-                accuracy = max(5, round(raw_score - error_penalty))
+                # Penalti tegas Tajweed: -10% per kesalahan harakat/makhraj
+                error_penalty = len(makhraj_errors) * 10
+                accuracy = max(5, round(word_score - error_penalty))
         else:
             accuracy = 0
 
@@ -377,6 +400,8 @@ class MakhrajEngine:
                     primary_drill_word = w.get('word', '')
                     break
 
+        read_words_count = matched_words_count + wrong_words_count
+
         return {
             'accuracy': accuracy,
             'partial_accuracy': partial_accuracy,
@@ -385,6 +410,7 @@ class MakhrajEngine:
             'stars': stars,
             'primary_drill_word': primary_drill_word,
             'matched_count': matched_words_count,
+            'read_count': read_words_count,
             'wrong_count': wrong_words_count,
             'missed_count': missed_words_count,
             'total_words': total_words_count,
@@ -493,7 +519,7 @@ class MakhrajEngine:
             ratio = matched / total if total > 0 else 0
             has_error = len(word_errors.get(i, [])) > 0
 
-            if total == 0:
+            if total == 0 or ratio < 0.50:
                 status = 'unread'
             elif has_error or ratio < 0.75:
                 status = 'wrong'
