@@ -162,10 +162,9 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                     if target_ayah_text:
                         if len(audio_pcm_buffer) > 0 and TarteelASR.is_available():
                             target_words = len(target_ayah_text.split())
-                            dynamic_tokens = max(32, min(128, target_words * 4 + 20))
-                            # Batasi audio buffer evaluasi akhir maks 15 detik (480,000 bytes) agar respons < 1.0s
-                            FINISH_AUDIO_WINDOW = 480000
-                            final_audio = bytes(audio_pcm_buffer[-FINISH_AUDIO_WINDOW:])
+                            dynamic_tokens = max(32, min(256, target_words * 6 + 30))
+                            # Gunakan SELURUH audio_pcm_buffer (bukan hanya 15s) agar ayat panjang dari awal hingga akhir ter-evaluasi!
+                            final_audio = bytes(audio_pcm_buffer)
                             t0 = time.time()
                             raw_transcript, confidence = TarteelASR.transcribe_pcm(
                                 final_audio,
@@ -273,10 +272,10 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                                 eval_result["status"] = "auto_completed"
                                 is_auto_completed_sent = True
 
-                                # Evaluasi full accumulated audio untuk hasil akhir 100% bersih & akurat
-                                FINISH_AUDIO_WINDOW = 480000
-                                final_audio = bytes(audio_pcm_buffer[-FINISH_AUDIO_WINDOW:])
-                                final_raw, final_conf = TarteelASR.transcribe_pcm(final_audio, max_tokens=64)
+                                # Evaluasi SELURUH audio_pcm_buffer dari awal hingga akhir (ayat panjang)
+                                dynamic_tokens = max(32, min(256, target_total * 6 + 30))
+                                final_audio = bytes(audio_pcm_buffer)
+                                final_raw, final_conf = TarteelASR.transcribe_pcm(final_audio, max_tokens=dynamic_tokens)
                                 if final_raw and any('\u0600' <= c <= '\u06FF' for c in final_raw):
                                     final_eval = MakhrajEngine.evaluate_realtime_stream(
                                         target_ayah_text=target_ayah_text,
