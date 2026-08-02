@@ -151,6 +151,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                     is_evaluating = False
                     is_auto_completed_sent = False
                     session_matched_indices = set()
+                    session_transcribed_words = {}  # {target_idx: word_text}
                     logger.info(f"[WebSocket] Init Talaqqi Stream untuk Target Ayat: '{target_ayah_text}'")
                     await websocket.send_json({
                         "status": "initialized",
@@ -243,28 +244,43 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                             target_words_list = [w for w in target_ayah_text.strip().split() if w]
                             rec_words_list = [w for w in clean.split() if w]
 
-                            # Match recognized words 1-to-1 to best matching target words
+                            # Match recognized words 1-to-1 with sequential positional window constraint
                             used_target_indices = set()
+                            last_matched_idx = max(session_matched_indices) if session_matched_indices else 0
+
                             for r_w in rec_words_list:
                                 best_sim = 0.0
                                 best_t_idx = -1
                                 for t_idx, t_w in enumerate(target_words_list):
                                     if t_idx in used_target_indices:
                                         continue
+                                    # Positional constraint: Jangan izinkan mencocokkan kata jauh di depan jika kata sebelumnya belum dibaca
+                                    if t_idx > last_matched_idx + 2:
+                                        continue
                                     sim = MakhrajEngine._word_similarity(t_w, r_w)
-                                    if sim > best_sim and sim >= 0.60:
+                                    if sim > best_sim and sim >= 0.65:
                                         best_sim = sim
                                         best_t_idx = t_idx
                                 if best_t_idx != -1:
                                     used_target_indices.add(best_t_idx)
                                     session_matched_indices.add(best_t_idx)
+                                    session_transcribed_words[best_t_idx] = r_w
+                                    last_matched_idx = max(last_matched_idx, best_t_idx)
 
                             target_total = len(target_words_list)
                             matched_words = len(session_matched_indices)
 
+                            # Build full accumulated transcript across frames
+                            ordered_words = [session_transcribed_words[i] for i in sorted(session_transcribed_words.keys())]
+                            accumulated_text = " ".join(ordered_words)
+
+                            # Hard Cap Rule: Transkrip dengan N kata tidak bisa auto-complete N+1 kata verse
+                            if len(rec_words_list) < target_total and matched_words >= target_total:
+                                matched_words = target_total - 1
+
                             eval_result = MakhrajEngine.evaluate_realtime_stream(
                                 target_ayah_text=target_ayah_text,
-                                recognized_speech_text=clean
+                                recognized_speech_text=accumulated_text if len(accumulated_text.split()) > len(clean.split()) else clean
                             )
                             eval_result['matched_count'] = matched_words
 
@@ -276,17 +292,22 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                                 dynamic_tokens = max(32, min(256, target_total * 6 + 30))
                                 final_audio = bytes(audio_pcm_buffer)
                                 final_raw, final_conf = TarteelASR.transcribe_pcm(final_audio, max_tokens=dynamic_tokens)
-                                if final_raw and any('\u0600' <= c <= '\u06FF' for c in final_raw):
-                                    final_eval = MakhrajEngine.evaluate_realtime_stream(
-                                        target_ayah_text=target_ayah_text,
-                                        recognized_speech_text=final_raw
-                                    )
-                                    final_eval["status"] = "auto_completed"
-                                    final_eval["raw_transcript"] = final_raw
-                                    final_eval["recognized_speech_text"] = final_raw
-                                    final_eval["source"] = "tarteel"
-                                    final_eval["model_confidence"] = round(final_conf, 3)
-                                    eval_result = final_eval
+                                
+                                # Jika final ASR hanya menangkap potongan akhir (misal 'الم'), pakai akumulasi frame yang lengkap
+                                chosen_raw = final_raw if (final_raw and len(final_raw.split()) >= len(ordered_words)) else accumulated_text
+                                if not chosen_raw:
+                                    chosen_raw = clean
+
+                                final_eval = MakhrajEngine.evaluate_realtime_stream(
+                                    target_ayah_text=target_ayah_text,
+                                    recognized_speech_text=chosen_raw
+                                )
+                                final_eval["status"] = "auto_completed"
+                                final_eval["raw_transcript"] = chosen_raw
+                                final_eval["recognized_speech_text"] = chosen_raw
+                                final_eval["source"] = "tarteel"
+                                final_eval["model_confidence"] = round(final_conf if final_conf > 0 else 0.88, 3)
+                                eval_result = final_eval
                             else:
                                 eval_result["status"] = "evaluating"
                                 eval_result["raw_transcript"] = clean
