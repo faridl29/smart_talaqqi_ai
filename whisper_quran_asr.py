@@ -10,6 +10,9 @@ Production-grade Native ONNX Engine for Real-Time Talaqqi (Apache-2.0 License).
 
 import logging
 import os
+
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+
 import threading
 import numpy as np
 from typing import Tuple, Optional, List, Dict, Any

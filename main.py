@@ -22,6 +22,7 @@ except ImportError:
     pass
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["OPENBLAS_NUM_THREADS"] = "2"
 os.environ["MKL_NUM_THREADS"] = "2"
