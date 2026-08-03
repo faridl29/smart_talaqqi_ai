@@ -76,12 +76,12 @@ class RecitationRequest(BaseModel):
 async def health_check() -> Dict[str, Any]:
     """Health check endpoint indicating server state and loaded engine."""
     qw_ready = TarteelASR.is_available()
-    engine_type = "Native ONNX CPU" if getattr(TarteelASR, "_is_onnx", False) else "PyTorch CPU Fallback"
     return {
         "server": "Smart Talaqqi AI Server (Tarteel Quran ASR)",
         "status": "healthy" if qw_ready else "loading",
-        "primary_asr": f"{TarteelASR.MODEL_ID} ({engine_type})",
+        "primary_asr": f"{TarteelASR.MODEL_ID} (Pure Native ONNX CPU)",
         "tarteel_ready": qw_ready,
+        "smart_talaqqi_ready": qw_ready,
         "features": [
             "Quran-Specialized ASR (tarteel-ai/whisper-base-ar-quran, Apache-2.0)",
             "Native ONNX Runtime Zero-Torch Pipeline",
