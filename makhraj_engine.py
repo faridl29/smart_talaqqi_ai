@@ -371,11 +371,9 @@ class MakhrajEngine:
             if len(makhraj_errors) == 0 and matched_words_count == total_words_count:
                 accuracy = 100
             else:
-                # Akurasi berbasis persentase kata yang BENAR-BENAR FASIH (100% makhraj & harakat a/i/u benar)
-                word_score = (matched_words_count / total_words_count) * 100
-                # Penalti tegas Tajweed: -10% per kesalahan harakat/makhraj
-                error_penalty = len(makhraj_errors) * 10
-                accuracy = max(5, round(word_score - error_penalty))
+                # Akurasi Tajweed Sinkron: Kata 100% fasih bernilai 1.0, kata dengan 1 kesalahan makhraj/vokal bernilai 0.5
+                raw_score = ((matched_words_count + 0.5 * wrong_words_count) / total_words_count) * 100
+                accuracy = max(5, min(99, round(raw_score)))
         else:
             accuracy = 0
 

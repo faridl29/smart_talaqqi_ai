@@ -284,6 +284,13 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                             )
                             eval_result['matched_count'] = matched_words
 
+                            # Sticky Rule: Kata yang sudah pernah matched di session ini HARUS tetap 'matched' (mencegah highlight UI berkedip)
+                            if 'word_results' in eval_result and isinstance(eval_result['word_results'], list):
+                                for w_res in eval_result['word_results']:
+                                    w_idx = w_res.get('index')
+                                    if w_idx in session_matched_indices:
+                                        w_res['status'] = 'matched'
+
                             if target_total > 0 and matched_words >= target_total:
                                 eval_result["status"] = "auto_completed"
                                 is_auto_completed_sent = True
@@ -310,7 +317,9 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                                 eval_result = final_eval
                             else:
                                 eval_result["status"] = "evaluating"
-                                eval_result["raw_transcript"] = clean
+                                live_accumulated = accumulated_text if accumulated_text else clean
+                                eval_result["raw_transcript"] = live_accumulated
+                                eval_result["recognized_speech_text"] = live_accumulated
 
                             eval_result["source"] = "tarteel"
                             eval_result["progress"] = f"{matched_words}/{target_total}"
