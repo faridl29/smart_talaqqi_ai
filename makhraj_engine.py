@@ -332,6 +332,8 @@ class MakhrajEngine:
             return 0.0
         if n1 == n2:
             return 1.0
+        if len(n1) <= 3 or len(n2) <= 3:
+            return 1.0 if n1 == n2 else 0.0
         return difflib.SequenceMatcher(None, n1, n2).ratio()
 
     @classmethod
@@ -557,14 +559,17 @@ class MakhrajEngine:
             matched = word_matched.get(i, 0)
             total = word_total.get(i, 0)
             ratio = matched / total if total > 0 else 0
-            has_error = len(word_errors.get(i, [])) > 0
+            errs = word_errors.get(i, [])
 
-            if total == 0 or ratio < 0.50:
+            has_makhraj_error = any(e.get('type') in {'makhraj', 'makhraj_missing'} for e in errs)
+
+            if total == 0 or matched == 0 or ratio < 0.35:
                 status = 'unread'
-            elif has_error or ratio < 0.75:
+            elif has_makhraj_error or ratio < 0.60:
                 status = 'wrong'
             else:
                 status = 'matched'
+
             word_results.append({
                 'word': arabic_word,
                 'status': status,
@@ -575,6 +580,11 @@ class MakhrajEngine:
 
         makhraj_errors = []
         for w_idx, errs in word_errors.items():
+            w_status = word_results[w_idx]['status'] if w_idx < len(word_results) else 'unread'
+            # Do not emit errors for words that haven't been spoken yet
+            if w_status == 'unread':
+                continue
+
             for err in errs:
                 err_with_word = dict(err)
                 err_with_word['target_word'] = words_arabic[w_idx]

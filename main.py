@@ -332,12 +332,23 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                 target_ayah_text=target_ayah_text,
                                 recognized_speech_text=accumulated_text if len(accumulated_text.split()) > len(clean.split()) else clean
                             )
-                            eval_result['matched_count'] = matched_words
+
+                            if len(rec_words_list) < target_total and matched_words >= target_total:
+                                matched_words = target_total - 1
+                            
+                            actual_matched = sum(
+                                 1 for w in eval_result.get("word_results", [])
+                                 if isinstance(w, dict) and w.get("status") == "matched"
+                             )
+                            eval_result["matched_count"] = actual_matched
+                            eval_result["source"] = "tarteel"
+                            eval_result["progress"] = f"{actual_matched}/{target_total}"
+                            eval_result["is_realtime"] = True
 
                             if 'word_results' in eval_result and isinstance(eval_result['word_results'], list):
                                 for w_res in eval_result['word_results']:
                                     w_idx = w_res.get('index')
-                                    if w_idx in session_matched_indices:
+                                    if w_idx in session_matched_indices and w_res.get('status') == 'unread':
                                         w_res['status'] = 'matched'
 
                             if target_total > 0 and matched_words >= target_total:
@@ -366,13 +377,9 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                 eval_result["raw_transcript"] = live_accumulated
                                 eval_result["recognized_speech_text"] = live_accumulated
 
-                            eval_result["source"] = "tarteel"
-                            eval_result["progress"] = f"{matched_words}/{target_total}"
-                            eval_result["is_realtime"] = True
-
                             logger.info(
                                 f"⏱️ [WebSocket Stream] ASR: {t_asr:.3f}s | Status ({eval_result['status']}): "
-                                f"'{eval_result.get('raw_transcript', clean)}' -> Match: {matched_words}/{target_total} ({eval_result.get('accuracy')}%)"
+                                f"'{eval_result.get('raw_transcript', clean)}' -> Match: {actual_matched}/{target_total} ({eval_result.get('accuracy')}%)"
                             )
                             await websocket.send_json(eval_result)
                     finally:
