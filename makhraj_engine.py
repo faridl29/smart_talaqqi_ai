@@ -15,6 +15,7 @@ Bekerja otomatis untuk SELURUH ayat Al-Quran tanpa definisi manual.
 import os
 import re
 import math
+import difflib
 import logging
 from typing import List, Dict, Any, Tuple, Optional
 
@@ -147,9 +148,9 @@ class MakhrajEngine:
         'م': 'm',
         'ن': 'n',
         'ه': 'h',
-        'و': '',
-        'ي': '',
-        'ى': '',
+        'و': 'w',
+        'ي': 'y',
+        'ى': 'y',
         'ة': 'h',
     }
 
@@ -181,21 +182,32 @@ class MakhrajEngine:
             c = s[j]
             if '\u064B' <= c <= '\u065F' or c in '\u0670\u0651\u0652':
                 if c == '\u0651':
-                    pending_shadda = True
+                    # Shadda mark — double huruf terakhir
+                    if chars and chars[-1][0]:
+                        letter = chars[-1][0]
+                        harakat_val = chars[-1][1]
+                        # Langsung double huruf (baik sudah punya harakat atau belum)
+                        chars[-1] = (letter + letter, harakat_val)
+                    else:
+                        pending_shadda = True
                 elif chars and chars[-1][1] is None:
-                    chars[-1] = (chars[-1][0], c)
+                    # Harakat biasa → assign ke huruf terakhir
+                    if pending_shadda:
+                        # Shadda + Harakat pada huruf yang sama (urutan: ب + ّ + ِ)
+                        chars[-1] = (chars[-1][0] + chars[-1][0], c)
+                        pending_shadda = False
+                    else:
+                        chars[-1] = (chars[-1][0], c)
                 else:
                     chars.append(('', c))
                 j += 1
                 continue
             elif '\u0600' <= c <= '\u06FF':
-                if chars and chars[-1][1] is None and pending_shadda and chars[-1][0] == c:
-                    chars[-1] = (c + c, chars[-1][1])
+                if pending_shadda and chars and chars[-1][0]:
+                    # Shadda tanpa harakat sebelum huruf baru — double dulu
+                    chars[-1] = (chars[-1][0] + chars[-1][0], chars[-1][1])
                     pending_shadda = False
-                else:
-                    chars.append((c, None))
-                    if pending_shadda:
-                        pending_shadda = False
+                chars.append((c, None))
                 j += 1
                 continue
             else:
@@ -242,7 +254,7 @@ class MakhrajEngine:
 
             if is_shaddah:
                 result.append(ph)
-                result.append('a')
+                result.append(v if v else 'a')
                 result.append(ph)
             else:
                 result.append(ph)
@@ -320,7 +332,6 @@ class MakhrajEngine:
             return 0.0
         if n1 == n2:
             return 1.0
-        import difflib
         return difflib.SequenceMatcher(None, n1, n2).ratio()
 
     @classmethod
@@ -460,55 +471,62 @@ class MakhrajEngine:
                     word_total[word_idx] = word_total.get(word_idx, 0) + 1
                     target_w = words_arabic[word_idx]
                     
-                    vowel_names = {
-                        'a': 'Fathah (a)',
-                        'i': 'Kasrah (i)',
-                        'u': 'Dhommah (u)',
-                        'aa': 'Mad Fathah (aa)',
-                        'ii': 'Mad Kasrah (ii)',
-                        'uu': 'Mad Dhommah (uu)',
-                    }
+                    is_last_word = (word_idx == len(words_arabic) - 1)
+                    is_end_vowel_at_waqf = is_last_word and (target_idx >= len(target_token_to_word) - 2) and (t_tok in {'a', 'i', 'u'})
 
-                    if r_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'} and t_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
-                        t_name = vowel_names.get(t_tok, t_tok)
-                        r_name = vowel_names.get(r_tok, r_tok)
-                        if t_tok in {'aa', 'ii', 'uu'} or r_tok in {'aa', 'ii', 'uu'}:
-                            word_errors[word_idx].append({
-                                'type': 'mad',
-                                'target': t_tok,
-                                'detected': r_tok,
-                                'target_char': t_name,
-                                'detected_char': r_name,
-                                'category': 'Kesalahan Mad (Durasi)',
-                                'guidance': f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Perhatikan durasi mad (2 harakat)."
-                            })
-                        else:
-                            word_errors[word_idx].append({
-                                'type': 'harakat',
-                                'target_vowel': t_tok,
-                                'detected_vowel': r_tok,
-                                'target_char': t_name,
-                                'detected_char': r_name,
-                                'category': 'Kesalahan Harakat (Vokal)',
-                                'guidance': f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Pastikan dibaca dengan harakat {t_name} yang jelas."
-                            })
+                    if is_end_vowel_at_waqf:
+                        # Hukum Tajweed Waqf Bil Iskan: Vokal pendek akhir di ujung ayat sah dibaca Sukun / berbeda
+                        word_matched[word_idx] = word_matched.get(word_idx, 0) + 1
                     else:
-                        arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
-                        detected_char = cls._PHONEME_TO_ARABIC.get(r_tok, r_tok)
-                        info = cls.MAKHRAJ_GUIDANCE.get(arabic_char, {})
-                        guidance = info.get('guidance', f"Pada kata '{target_w}', huruf '{arabic_char}' terucap mirip '{detected_char}'. Periksa makhraj.")
-                        category = info.get('category', 'Artikulasi Makhraj')
-                        anatomy = info.get('anatomy', 'Perhatikan posisi lidah dan rongga tenggorokan saat melafalkan huruf.')
-                        tajweed_rule = info.get('tajweed_rule', 'Sifat & Makhraj Huruf')
-                        word_errors[word_idx].append({
-                            'type': 'makhraj',
-                            'target_char': arabic_char,
-                            'detected_char': detected_char,
-                            'category': category,
-                            'guidance': guidance,
-                            'anatomy': anatomy,
-                            'tajweed_rule': tajweed_rule,
-                        })
+                        vowel_names = {
+                            'a': 'Fathah (a)',
+                            'i': 'Kasrah (i)',
+                            'u': 'Dhommah (u)',
+                            'aa': 'Mad Fathah (aa)',
+                            'ii': 'Mad Kasrah (ii)',
+                            'uu': 'Mad Dhommah (uu)',
+                        }
+
+                        if r_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'} and t_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
+                            t_name = vowel_names.get(t_tok, t_tok)
+                            r_name = vowel_names.get(r_tok, r_tok)
+                            if t_tok in {'aa', 'ii', 'uu'} or r_tok in {'aa', 'ii', 'uu'}:
+                                word_errors[word_idx].append({
+                                    'type': 'mad',
+                                    'target': t_tok,
+                                    'detected': r_tok,
+                                    'target_char': t_name,
+                                    'detected_char': r_name,
+                                    'category': 'Kesalahan Mad (Durasi)',
+                                    'guidance': f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Perhatikan durasi mad (2 harakat)."
+                                })
+                            else:
+                                word_errors[word_idx].append({
+                                    'type': 'harakat',
+                                    'target_vowel': t_tok,
+                                    'detected_vowel': r_tok,
+                                    'target_char': t_name,
+                                    'detected_char': r_name,
+                                    'category': 'Kesalahan Harakat (Vokal)',
+                                    'guidance': f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Pastikan dibaca dengan harakat {t_name} yang jelas."
+                                })
+                        else:
+                            arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
+                            detected_char = cls._PHONEME_TO_ARABIC.get(r_tok, r_tok)
+                            info = cls.MAKHRAJ_GUIDANCE.get(arabic_char, {})
+                            guidance = info.get('guidance', f"Pada kata '{target_w}', huruf '{arabic_char}' terucap mirip '{detected_char}'. Periksa makhraj.")
+                            category = info.get('category', 'Artikulasi Makhraj')
+                            anatomy = info.get('anatomy', 'Perhatikan posisi lidah dan rongga tenggorokan saat melafalkan huruf.')
+                            tajweed_rule = info.get('tajweed_rule', 'Sifat & Makhraj Huruf')
+                            word_errors[word_idx].append({
+                                'type': 'makhraj',
+                                'target_char': arabic_char,
+                                'detected_char': detected_char,
+                                'category': category,
+                                'guidance': guidance,
+                                'anatomy': anatomy,
+                                'tajweed_rule': tajweed_rule,
+                            })
                 target_idx += 1
                 rec_idx += 1
             elif op == 'ins':
@@ -517,7 +535,13 @@ class MakhrajEngine:
                 word_idx = target_token_to_word[target_idx] if target_idx < len(target_token_to_word) else -1
                 if word_idx >= 0:
                     word_total[word_idx] = word_total.get(word_idx, 0) + 1
-                    if t_tok not in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
+                    is_last_word = (word_idx == len(words_arabic) - 1)
+                    is_end_vowel_at_waqf = is_last_word and (target_idx >= len(target_token_to_word) - 2) and (t_tok in {'a', 'i', 'u'})
+
+                    if is_end_vowel_at_waqf:
+                        # Hukum Tajweed Waqf Bil Iskan: Hilang vokal pendek di akhir ayat dianggap matched
+                        word_matched[word_idx] = word_matched.get(word_idx, 0) + 1
+                    elif t_tok not in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
                         arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
                         word_errors[word_idx].append({
                             'type': 'makhraj_missing',

@@ -21,6 +21,7 @@ signal.signal(signal.SIGINT, lambda s, f: os._exit(0))
 signal.signal(signal.SIGTERM, lambda s, f: os._exit(0))
 
 import asyncio
+import array
 import time
 import json
 import logging
@@ -123,25 +124,57 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
     VAD_RMS_THRESHOLD = int(os.getenv("VAD_RMS_THRESHOLD", "450"))
     is_evaluating = False
 
+    # Adaptive noise baseline (kalibrasi dari 1 detik audio pertama)
+    noise_baseline_rms = 0.0
+    noise_calibrated = False
+
     def _has_speech(pcm: bytes) -> bool:
+        nonlocal noise_baseline_rms, noise_calibrated
         if not pcm:
             return False
-        # RMS sederhana dari int16 samples
-        import array
         samples = array.array('h', pcm)
         if not samples:
             return False
+        # RMS Energy
         sq = sum(s * s for s in samples)
-        return (sq / len(samples)) ** 0.5 > VAD_RMS_THRESHOLD
+        rms = (sq / len(samples)) ** 0.5
+
+        # Kalibrasi noise baseline dari audio awal (sebelum user bicara)
+        if not noise_calibrated and len(audio_pcm_buffer) <= EVAL_WINDOW_BYTES * 2:
+            noise_baseline_rms = max(noise_baseline_rms, rms * 0.8)
+            noise_calibrated = len(audio_pcm_buffer) >= EVAL_WINDOW_BYTES
+
+        # Adaptive threshold: minimal VAD_RMS_THRESHOLD, atau 2x noise baseline
+        adaptive_threshold = max(VAD_RMS_THRESHOLD, noise_baseline_rms * 2)
+
+        if rms <= adaptive_threshold:
+            return False
+
+        # Zero-Crossing Rate: suara manusia biasanya ZCR 0.01-0.15, noise tinggi > 0.3
+        zero_crossings = sum(1 for i in range(1, len(samples)) if (samples[i] >= 0) != (samples[i-1] >= 0))
+        zcr = zero_crossings / len(samples)
+        if zcr > 0.35:
+            return False  # Kemungkinan besar noise, bukan suara manusia
+
+        return True
 
     try:
         while True:
-            msg = await websocket.receive()
+            try:
+                msg = await asyncio.wait_for(websocket.receive(), timeout=30.0)
+            except asyncio.TimeoutError:
+                # 30 detik tanpa data → client mungkin sudah disconnect diam-diam
+                logger.info("[WebSocket] Timeout 30s tanpa data, menutup koneksi.")
+                break
 
             # ─── Handle JSON Control Messages (dipakai saat flutter kirim text frame) ───
             if "text" in msg and msg["text"]:
                 data: Dict[str, Any] = json.loads(msg["text"])
                 action = data.get("action", "")
+
+                if action == "ping":
+                    # Keepalive ping dari Flutter — abaikan, cukup reset timeout
+                    continue
 
                 if action == "init":
                     target_ayah_text = data.get("target_ayah_text", "")
@@ -152,6 +185,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                     is_auto_completed_sent = False
                     session_matched_indices = set()
                     session_transcribed_words = {}  # {target_idx: word_text}
+                    session_word_similarities = {}  # {target_idx: float similarity}
                     logger.info(f"[WebSocket] Init Talaqqi Stream untuk Target Ayat: '{target_ayah_text}'")
                     await websocket.send_json({
                         "status": "initialized",
@@ -224,9 +258,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                             has_spoken_recently = True
 
                         if TarteelASR.is_available():
-                            # Optimasi Kunci Real-Time: Batasi audio window streaming maks 3.0 detik (96,000 bytes)
-                            # Ini membuat waktu eksekusi PyTorch SELALU konsisten ~0.15 detik
-                            STREAM_AUDIO_WINDOW_BYTES = 96000
+                            # Optimasi: Stream ASR window 5.0 detik (160,000 bytes) untuk konteks kata panjang
+                            STREAM_AUDIO_WINDOW_BYTES = 160000
                             stream_audio = bytes(audio_pcm_buffer[-STREAM_AUDIO_WINDOW_BYTES:])
                             
                             t0 = time.time()
@@ -264,7 +297,10 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                                 if best_t_idx != -1:
                                     used_target_indices.add(best_t_idx)
                                     session_matched_indices.add(best_t_idx)
-                                    session_transcribed_words[best_t_idx] = r_w
+                                    old_sim = session_word_similarities.get(best_t_idx, 0.0)
+                                    if best_sim >= old_sim:
+                                        session_transcribed_words[best_t_idx] = r_w
+                                        session_word_similarities[best_t_idx] = best_sim
                                     last_matched_idx = max(last_matched_idx, best_t_idx)
 
                             target_total = len(target_words_list)
@@ -292,10 +328,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket):
                                         w_res['status'] = 'matched'
 
                             if target_total > 0 and matched_words >= target_total:
-                                eval_result["status"] = "auto_completed"
+                                # Auto-complete: Skip evaluasi awal, langsung re-evaluate dengan SELURUH audio buffer
                                 is_auto_completed_sent = True
-
-                                # Evaluasi SELURUH audio_pcm_buffer dari awal hingga akhir (ayat panjang)
                                 dynamic_tokens = max(32, min(256, target_total * 6 + 30))
                                 final_audio = bytes(audio_pcm_buffer)
                                 final_raw, final_conf = TarteelASR.transcribe_pcm(final_audio, max_tokens=dynamic_tokens)

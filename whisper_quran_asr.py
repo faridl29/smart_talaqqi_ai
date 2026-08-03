@@ -1,5 +1,5 @@
 """
-Quranic ASR — Tarteel Whisper Tiny via HuggingFace transformers.
+Quranic ASR — Tarteel Whisper Model via HuggingFace Optimum ONNX & PyTorch.
 API:
     transcribe_pcm(pcm_bytes, sample_rate=16000) -> (text, confidence)
 
@@ -13,13 +13,21 @@ from typing import Tuple
 
 logger = logging.getLogger("TarteelASR")
 
-_qw_available = False
+_ort_available = False
+_torch_available = False
+
+try:
+    from optimum.onnxruntime import ORTModelForSpeechSeq2Seq
+    _ort_available = True
+except Exception:
+    _ort_available = False
+
 try:
     import torch
     from transformers import WhisperForConditionalGeneration, WhisperProcessor
-    _qw_available = True
-except ImportError:
-    pass
+    _torch_available = True
+except Exception:
+    _torch_available = False
 
 try:
     from dotenv import load_dotenv
@@ -27,27 +35,29 @@ try:
 except ImportError:
     pass
 
+
 class TarteelASR:
     """
-    Wrapper transformers + tarteel-ai/whisper-tiny-ar-quran.
-    Tiny (39M params) — Model Spesialis Al-Qur'an DENGAN HARAKAT LENGKAP.
-    License: Apache-2.0 (model), Quran data MIT/Tarteel.
+    Wrapper HuggingFace Optimum ONNX / PyTorch untuk Model Tarteel Quran ASR.
+    Mendukung ONNX model ('eventhorizon0/tarteel-ai-onnx-whisper-base-ar-quran') dan PyTorch.
+    License: Apache-2.0.
     """
 
-    MODEL_ID = os.getenv("MODEL_ID", "tarteel-ai/whisper-tiny-ar-quran")
+    MODEL_ID = os.getenv("MODEL_ID", "eventhorizon0/tarteel-ai-onnx-whisper-base-ar-quran")
 
     _model = None
     _processor = None
+    _is_onnx = False
     _is_loading = False
     _warned_unavailable = False
 
     @classmethod
     def get_model(cls) -> object:
-        """Lazy-load HF Whisper Tiny (PyTorch, fp32). Singleton."""
-        if not _qw_available:
+        """Lazy-load HF Whisper Model (ONNX Runtime CPU / PyTorch CPU). Singleton."""
+        if not _ort_available and not _torch_available:
             if not cls._warned_unavailable:
                 cls._warned_unavailable = True
-                logger.warning("transformers/torch tidak terinstall.")
+                logger.warning("optimum / transformers / torch tidak terinstall.")
             return None
 
         if cls._model is not None and cls._processor is not None:
@@ -58,20 +68,58 @@ class TarteelASR:
 
         cls._is_loading = True
         try:
-            logger.info(f"Loading HF Tarteel Quran Model '{cls.MODEL_ID}' (PyTorch CPU)...")
-            cls._processor = WhisperProcessor.from_pretrained(cls.MODEL_ID)
-            cls._model = WhisperForConditionalGeneration.from_pretrained(cls.MODEL_ID)
-            cls._model.eval()
+            from transformers import WhisperProcessor
 
-            # Set PyTorch threads pas dengan 2 vCPU VPS untuk mencegah context switching lag
-            try:
-                num_cores = max(1, min(2, os.cpu_count() or 2))
-                torch.set_num_threads(num_cores)
-                logger.info(f"PyTorch threads set to {num_cores} for VPS CPU optimization.")
-            except Exception:
-                pass
+            # Try ONNX Runtime first if available
+            if _ort_available:
+                try:
+                    logger.info(f"Loading HF ONNX Model '{cls.MODEL_ID}' (ONNX Runtime CPU)...")
+                    # Coba muat subfolder 'onnx' terlebih dahulu jika ada
+                    sub = 'onnx' if 'onnx' in cls.MODEL_ID.lower() or 'onnx' in cls.MODEL_ID else None
+                    try:
+                        cls._processor = WhisperProcessor.from_pretrained(cls.MODEL_ID, subfolder=sub)
+                    except Exception:
+                        cls._processor = WhisperProcessor.from_pretrained(cls.MODEL_ID)
 
-            logger.info(f"⚡ Model Tarteel Quran '{cls.MODEL_ID}' BERHASIL dimuat!")
+                    try:
+                        cls._model = ORTModelForSpeechSeq2Seq.from_pretrained(
+                            cls.MODEL_ID,
+                            subfolder='onnx',
+                            encoder_file_name='encoder_model.onnx',
+                            decoder_file_name='decoder_model.onnx',
+                            decoder_with_past_file_name='decoder_with_past_model.onnx',
+                            export=False
+                        )
+                    except Exception:
+                        cls._model = ORTModelForSpeechSeq2Seq.from_pretrained(
+                            cls.MODEL_ID,
+                            export=False
+                        )
+
+                    cls._is_onnx = True
+                    logger.info(f"⚡ Model ONNX Tarteel Quran '{cls.MODEL_ID}' BERHASIL dimuat (ONNX Engine)!")
+                    return cls._model
+                except Exception as e_onnx:
+                    logger.warning(f"Gagal memuat via ONNX Runtime ({e_onnx}), mencoba PyTorch fallback...")
+
+            # PyTorch Fallback
+            if _torch_available:
+                logger.info(f"Loading HF PyTorch Model '{cls.MODEL_ID}' (PyTorch CPU)...")
+                cls._processor = WhisperProcessor.from_pretrained(cls.MODEL_ID)
+                cls._model = WhisperForConditionalGeneration.from_pretrained(cls.MODEL_ID)
+                cls._model.eval()
+                cls._is_onnx = False
+
+                try:
+                    num_cores = max(1, min(2, os.cpu_count() or 2))
+                    torch.set_num_threads(num_cores)
+                    logger.info(f"PyTorch threads set to {num_cores} for VPS CPU optimization.")
+                except Exception:
+                    pass
+
+                logger.info(f"⚡ Model PyTorch Tarteel Quran '{cls.MODEL_ID}' BERHASIL dimuat!")
+                return cls._model
+
         except Exception as e:
             logger.error(f"Gagal memuat model Tarteel: {e}")
             cls._model = None
@@ -83,7 +131,7 @@ class TarteelASR:
 
     @classmethod
     def is_available(cls) -> bool:
-        return _qw_available and cls.get_model() is not None
+        return (_ort_available or _torch_available) and cls.get_model() is not None
 
     @classmethod
     def transcribe_pcm(
@@ -119,22 +167,35 @@ class TarteelASR:
             forced_decoder_ids = cls._processor.get_decoder_prompt_ids(language="ar", task="transcribe")
             tokenizer = cls._processor.tokenizer
 
-            with torch.inference_mode():
+            gen_kwargs = {
+                "max_new_tokens": max_tokens,
+                "num_beams": 1,
+                "do_sample": False,
+                "forced_decoder_ids": forced_decoder_ids,
+                "eos_token_id": tokenizer.eos_token_id,
+                "no_repeat_ngram_size": 0,
+            }
+
+            if not cls._is_onnx and _torch_available:
+                with torch.inference_mode():
+                    gen_out = model.generate(
+                        input_features,
+                        attention_mask=attention_mask,
+                        use_cache=True,
+                        return_dict_in_generate=bool(return_confidence),
+                        output_scores=bool(return_confidence),
+                        **gen_kwargs
+                    )
+            else:
                 gen_out = model.generate(
                     input_features,
                     attention_mask=attention_mask,
-                    max_new_tokens=max_tokens,
-                    num_beams=1,
-                    do_sample=False,
-                    use_cache=True,
-                    forced_decoder_ids=forced_decoder_ids,
-                    eos_token_id=tokenizer.eos_token_id,
-                    no_repeat_ngram_size=0,
                     return_dict_in_generate=bool(return_confidence),
                     output_scores=bool(return_confidence),
+                    **gen_kwargs
                 )
 
-            sequences = gen_out.sequences if return_confidence else gen_out
+            sequences = gen_out.sequences if (return_confidence and hasattr(gen_out, 'sequences')) else gen_out
             text = cls._processor.batch_decode(
                 sequences, skip_special_tokens=True
             )[0].strip()
@@ -145,16 +206,24 @@ class TarteelASR:
                     seq_ids = sequences[0]
                     step_logprobs = []
                     for step_logits, tok_id in zip(gen_out.scores, seq_ids[1:]):
-                        lp = torch.log_softmax(step_logits[0], dim=-1)
-                        step_logprobs.append(float(lp[tok_id].item()))
+                        if _torch_available and isinstance(step_logits, torch.Tensor):
+                            lp = torch.log_softmax(step_logits[0], dim=-1)
+                            step_logprobs.append(float(lp[tok_id].item()))
+                        elif isinstance(step_logits, np.ndarray):
+                            logits_0 = step_logits[0]
+                            max_l = np.max(logits_0)
+                            exp_l = np.exp(logits_0 - max_l)
+                            softmax_l = exp_l / np.sum(exp_l)
+                            step_logprobs.append(float(np.log(softmax_l[tok_id] + 1e-12)))
                     if step_logprobs:
                         mean_lp = sum(step_logprobs) / len(step_logprobs)
                         confidence = float(max(0.0, min(1.0, 1.0 + mean_lp)))
                 except Exception:
                     pass
 
+            engine_label = "ONNX" if cls._is_onnx else "PyTorch"
             logger.info(
-                f"Tarteel Quran transcript ({len(pcm_bytes)} bytes, "
+                f"Tarteel Quran [{engine_label}] transcript ({len(pcm_bytes)} bytes, "
                 f"conf={confidence:.2%}): '{text[:80]}{'...' if len(text) > 80 else ''}'"
             )
             return text, confidence
