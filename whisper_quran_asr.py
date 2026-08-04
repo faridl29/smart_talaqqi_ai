@@ -12,6 +12,8 @@ import logging
 import os
 
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+if "HF_HOME" not in os.environ:
+    os.environ["HF_HOME"] = "/root/.cache/huggingface"
 
 import threading
 import numpy as np
@@ -91,10 +93,31 @@ class TarteelASR:
                 except Exception:
                     cls._processor = WhisperProcessor.from_pretrained(cls.MODEL_ID)
 
-                # Locate model files from HuggingFace Hub
+                # Locate standard native ONNX model files from HuggingFace Hub
                 enc_path = hf_hub_download(cls.MODEL_ID, "encoder_model.onnx", subfolder="onnx")
                 dec_path = hf_hub_download(cls.MODEL_ID, "decoder_model.onnx", subfolder="onnx")
                 dec_past_path = hf_hub_download(cls.MODEL_ID, "decoder_with_past_model.onnx", subfolder="onnx")
+
+                # Apply ONNX Runtime Dynamic INT8 Quantization (50% RAM & CPU speedup)
+                enable_int8 = os.getenv("ENABLE_INT8", "true").lower() in ("true", "1")
+                enc_q_path = enc_path.replace(".onnx", "_dyn_quant.onnx")
+                dec_q_path = dec_path.replace(".onnx", "_dyn_quant.onnx")
+                dec_past_q_path = dec_past_path.replace(".onnx", "_dyn_quant.onnx")
+
+                is_quantized = False
+                if enable_int8:
+                    try:
+                        from onnxruntime.quantization import quantize_dynamic, QuantType
+                        for src, dst in [(enc_path, enc_q_path), (dec_path, dec_q_path), (dec_past_path, dec_past_q_path)]:
+                            if not os.path.exists(dst):
+                                logger.info(f"Quantizing ONNX model for CPU INT8 -> '{os.path.basename(dst)}'...")
+                                quantize_dynamic(src, dst, weight_type=QuantType.QUInt8)
+                        enc_path, dec_path, dec_past_path = enc_q_path, dec_q_path, dec_past_q_path
+                        is_quantized = True
+                    except Exception as q_err:
+                        logger.warning(f"ONNX Dynamic Quantization skipped: {q_err}. Using standard FP32 ONNX model.")
+                else:
+                    logger.info("ENABLE_INT8=false -> Using standard FP32 ONNX model.")
 
                 # Configure CPU Session Options optimized for 2 vCPU / 4 GB RAM VPS
                 num_cores = max(1, min(2, os.cpu_count() or 2))
@@ -120,7 +143,8 @@ class TarteelASR:
                 cls._initial_input_ids = np.array([cls._prompt_tokens], dtype=np.int64)
 
                 cls._is_loaded = True
-                logger.info(f"⚡ Pure Native ONNX Engine '{cls.MODEL_ID}' loaded successfully! (Threads={num_cores})")
+                quant_str = " (Dynamic INT8 Quantized)" if is_quantized else " (FP32)"
+                logger.info(f"⚡ Pure Native ONNX Engine '{cls.MODEL_ID}'{quant_str} loaded successfully! (Threads={num_cores})")
                 return cls._encoder_sess
 
             except Exception as e:

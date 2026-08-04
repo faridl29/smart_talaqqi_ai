@@ -10,7 +10,7 @@ services:
       - HF_HOME=/root/.cache/huggingface
     volumes:
       - .:/app
-      - hf_cache:/root/.cache
+      - hf_cache:/root/.cache/huggingface
     deploy:
       resources:
         limits:
