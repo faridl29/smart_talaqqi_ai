@@ -259,6 +259,11 @@ class TarteelASR:
 
                 tokens.append(next_token)
 
+                # Deteksi loop repetisi n-gram (3 token berurutan sama) untuk hentikan halusinasi Whisper
+                if len(tokens) >= 6 and tokens[-1] == tokens[-2] == tokens[-3]:
+                    logger.debug("Tarteel ASR: Early stop due to token repetition loop.")
+                    break
+
                 past_out_names = [o.name for o in cls._decoder_past_sess.get_outputs()]
                 for idx, name in enumerate(past_out_names[1:]):
                     past_name = name.replace("present.", "past_key_values.")

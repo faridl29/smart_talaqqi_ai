@@ -226,7 +226,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                     if target_ayah_text:
                         if len(audio_pcm_buffer) > 0 and TarteelASR.is_available():
                             target_words = len(target_ayah_text.split())
-                            dynamic_tokens = max(32, min(256, target_words * 6 + 30))
+                            dynamic_tokens = max(32, min(512, target_words * 6 + 30))
                             final_audio = bytes(audio_pcm_buffer)
                             t0 = time.time()
                             raw_transcript, confidence = TarteelASR.transcribe_pcm(
@@ -295,8 +295,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             has_spoken_recently = False
 
                         if TarteelASR.is_available():
-                            # Adaptive audio window: 4s to 6s for intermediate streaming, reducing latency by ~50%
-                            STREAM_AUDIO_WINDOW_BYTES = min(len(audio_pcm_buffer), 80000)
+                            # Adaptive audio window: up to 5s (160,000 bytes) for complete streaming transcripts
+                            STREAM_AUDIO_WINDOW_BYTES = min(len(audio_pcm_buffer), 160000)
                             stream_audio = bytes(audio_pcm_buffer[-STREAM_AUDIO_WINDOW_BYTES:])
 
                             t0 = time.time()
@@ -306,7 +306,12 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             t_asr = time.time() - t0
 
                             clean = (raw_transcript or "").strip()
-                            clean = " ".join(clean.split())
+                            # Buang kata berulang berurutan (gejala halusinasi Whisper)
+                            words_clean = []
+                            for w in clean.split():
+                                if not words_clean or MakhrajEngine.normalize_arabic(w) != MakhrajEngine.normalize_arabic(words_clean[-1]):
+                                    words_clean.append(w)
+                            clean = " ".join(words_clean)
                             if not clean or not any('\u0600' <= c <= '\u06FF' for c in clean):
                                 continue
 
@@ -325,7 +330,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                     if t_idx > last_matched_idx + 1:
                                         continue
                                     sim = MakhrajEngine._word_similarity(t_w, r_w)
-                                    if sim > best_sim and sim >= 0.65:
+                                    if sim > best_sim and sim >= 0.82:
                                         best_sim = sim
                                         best_t_idx = t_idx
                                 if best_t_idx != -1:
@@ -372,7 +377,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             )
                             if target_total > 0 and is_contiguous:
                                 is_auto_completed_sent = True
-                                dynamic_tokens = max(32, min(256, target_total * 6 + 30))
+                                dynamic_tokens = max(32, min(512, target_total * 6 + 30))
                                 final_audio = bytes(audio_pcm_buffer)
                                 final_raw, final_conf = TarteelASR.transcribe_pcm(final_audio, max_tokens=dynamic_tokens)
 
