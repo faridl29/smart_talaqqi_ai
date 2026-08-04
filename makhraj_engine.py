@@ -556,8 +556,8 @@ class MakhrajEngine:
             if len(makhraj_errors) == 0 and matched_words_count == total_words_count:
                 accuracy = 100
             else:
-                # Akurasi Tajweed Sinkron: Kata 100% fasih bernilai 1.0, kata dengan 1 kesalahan makhraj/vokal bernilai 0.5
-                raw_score = ((matched_words_count + 0.5 * wrong_words_count) / total_words_count) * 100
+                # Akurasi Tajweed Presisi: Kata 100% fasih = 1.0, kata salah (wrong) hanya dapat partial credit 0.1
+                raw_score = ((matched_words_count + 0.1 * wrong_words_count) / total_words_count) * 100
                 accuracy = max(5, min(99, round(raw_score)))
         else:
             accuracy = 0
@@ -711,6 +711,18 @@ class MakhrajEngine:
                 target_idx += 1
                 rec_idx += 1
             elif op == 'ins':
+                word_idx = target_token_to_word[target_idx] if target_idx < len(target_token_to_word) else (target_token_to_word[-1] if target_token_to_word else -1)
+                if word_idx >= 0:
+                    word_total[word_idx] = word_total.get(word_idx, 0) + 1
+                    extra_char = cls._PHONEME_TO_ARABIC.get(r_tok, r_tok)
+                    if r_tok not in {'a', 'i', 'u'}:
+                        word_errors[word_idx].append({
+                            'type': 'makhraj_extra',
+                            'target_char': '',
+                            'detected_char': extra_char,
+                            'category': 'Penambahan Huruf/Vokal',
+                            'guidance': f"Terdapat penambahan sebutan/vokal '{extra_char}' pada kata '{words_arabic[word_idx]}'."
+                        })
                 rec_idx += 1
             elif op == 'del':
                 word_idx = target_token_to_word[target_idx] if target_idx < len(target_token_to_word) else -1
@@ -740,11 +752,11 @@ class MakhrajEngine:
             ratio = matched / total if total > 0 else 0
             errs = word_errors.get(i, [])
 
-            has_makhraj_error = any(e.get('type') in {'makhraj', 'makhraj_missing'} for e in errs)
+            has_error = len(errs) > 0
 
             if total == 0 or matched == 0 or ratio < 0.35:
                 status = 'unread'
-            elif has_makhraj_error or ratio < 0.60:
+            elif has_error or ratio < 0.90:
                 status = 'wrong'
             else:
                 status = 'matched'
@@ -760,7 +772,7 @@ class MakhrajEngine:
         makhraj_errors = []
         for w_idx, errs in word_errors.items():
             w_status = word_results[w_idx]['status'] if w_idx < len(word_results) else 'unread'
-            # Do not emit errors for words that haven't been spoken yet
+            # Emit error detail untuk kata yang salah atau sedang di-evaluasi
             if w_status == 'unread':
                 continue
 
