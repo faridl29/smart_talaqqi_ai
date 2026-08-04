@@ -27,9 +27,14 @@ os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["OPENBLAS_NUM_THREADS"] = "2"
 os.environ["MKL_NUM_THREADS"] = "2"
 
-# Signal handling for instantaneous terminate signal
-signal.signal(signal.SIGINT, lambda s, f: os._exit(0))
-signal.signal(signal.SIGTERM, lambda s, f: os._exit(0))
+# Graceful shutdown: biarkan WebSocket cleanup selesai, bukan os._exit paksa
+signal.signal(signal.SIGINT, lambda s, f: asyncio.create_task(_shutdown()))
+signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(_shutdown()))
+
+async def _shutdown():
+    logger.info("Shutdown signal diterima — menutup server dengan rapi...")
+    for task in asyncio.all_tasks():
+        task.cancel()
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,11 +63,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Middleware
+# CORS Middleware — tanpa allow_credentials saat allow_origins=* (spec violation)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -138,15 +143,18 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
     MIN_BUFFER_BYTES: int = int(os.getenv("MIN_BUFFER_BYTES", "32000"))
     AUDIO_EVAL_INTERVAL_BYTES: int = int(os.getenv("AUDIO_EVAL_INTERVAL_BYTES", "32000"))
     EVAL_WINDOW_BYTES: int = 32000         # VAD check 1.0s window
-    VAD_RMS_THRESHOLD: int = int(os.getenv("VAD_RMS_THRESHOLD", "450"))
+    VAD_RMS_THRESHOLD: int = int(os.getenv("VAD_RMS_THRESHOLD", "200"))
     is_evaluating: bool = False
     is_auto_completed_sent: bool = False
+    has_evaluated_once: bool = False
 
     # Session state tracking for Flutter client sync
     session_matched_indices: Set[int] = set()
     session_transcribed_words: Dict[int, str] = {}
     session_word_similarities: Dict[int, float] = {}
 
+    # Batas buffer audio (5 MB) untuk cegah memory exhaustion pada sesi panjang
+    MAX_BUFFER_BYTES: int = 5 * 1024 * 1024
     # Adaptive noise baseline calibration
     noise_baseline_rms: float = 0.0
     noise_calibrated: bool = False
@@ -203,6 +211,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                     has_spoken_recently = False
                     is_evaluating = False
                     is_auto_completed_sent = False
+                    has_evaluated_once = False
                     session_matched_indices.clear()
                     session_transcribed_words.clear()
                     session_word_similarities.clear()
@@ -254,6 +263,11 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                     continue
 
                 raw_chunk = msg["bytes"]
+                # Batasi buffer agar tidak membesar tanpa batas (anti-DoS / memory leak)
+                if len(audio_pcm_buffer) + len(raw_chunk) > MAX_BUFFER_BYTES:
+                    # Trim dari depan, pertahankan audio terbaru (paling relevan untuk finish)
+                    overflow = len(audio_pcm_buffer) + len(raw_chunk) - MAX_BUFFER_BYTES
+                    del audio_pcm_buffer[:overflow]
                 audio_pcm_buffer.extend(raw_chunk)
 
                 buffer_size = len(audio_pcm_buffer)
@@ -267,16 +281,18 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                     last_audio_eval_size = buffer_size
 
                     try:
-                        # VAD on last 1.0s window
-                        audio_window = bytes(audio_pcm_buffer[-EVAL_WINDOW_BYTES:])
+                        # VAD pada window 2.0s (lebih toleran untuk utterance pendek)
+                        audio_window = bytes(audio_pcm_buffer[-EVAL_WINDOW_BYTES * 2:])
                         is_speech_now = _has_speech(audio_window)
 
-                        if not is_speech_now:
-                            if not has_spoken_recently:
-                                continue
-                            has_spoken_recently = False
-                        else:
+                        if is_speech_now:
                             has_spoken_recently = True
+                            has_evaluated_once = True
+                        elif not has_evaluated_once and not has_spoken_recently:
+                            # Belum ada speech sama sekali dalam sesi — skip evaluasi kosong
+                            continue
+                        else:
+                            has_spoken_recently = False
 
                         if TarteelASR.is_available():
                             # Adaptive audio window: 4s to 6s for intermediate streaming, reducing latency by ~50%
@@ -306,7 +322,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                 for t_idx, t_w in enumerate(target_words_list):
                                     if t_idx in used_target_indices:
                                         continue
-                                    if t_idx > last_matched_idx + 2:
+                                    if t_idx > last_matched_idx + 1:
                                         continue
                                     sim = MakhrajEngine._word_similarity(t_w, r_w)
                                     if sim > best_sim and sim >= 0.65:
@@ -327,17 +343,11 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             ordered_words = [session_transcribed_words[i] for i in sorted(session_transcribed_words.keys())]
                             accumulated_text = " ".join(ordered_words)
 
-                            if len(rec_words_list) < target_total and matched_words >= target_total:
-                                matched_words = target_total - 1
-
                             eval_result = MakhrajEngine.evaluate_realtime_stream(
                                 target_ayah_text=target_ayah_text,
                                 recognized_speech_text=accumulated_text if len(accumulated_text.split()) > len(clean.split()) else clean
                             )
 
-                            if len(rec_words_list) < target_total and matched_words >= target_total:
-                                matched_words = target_total - 1
-                            
                             actual_matched = sum(
                                  1 for w in eval_result.get("word_results", [])
                                  if isinstance(w, dict) and w.get("status") == "matched"
@@ -353,7 +363,14 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                     if w_idx in session_matched_indices and w_res.get('status') == 'unread':
                                         w_res['status'] = 'matched'
 
-                            if target_total > 0 and matched_words >= target_total:
+                            # Auto-complete HANYA jika semua kata ter-match DALAM URUTAN BENAR
+                            # (indeks kontigu: tidak ada kata yang di-skip di tengah)
+                            is_contiguous = (
+                                len(session_matched_indices) == target_total
+                                and target_total > 0
+                                and max(session_matched_indices) - min(session_matched_indices) == target_total - 1
+                            )
+                            if target_total > 0 and is_contiguous:
                                 is_auto_completed_sent = True
                                 dynamic_tokens = max(32, min(256, target_total * 6 + 30))
                                 final_audio = bytes(audio_pcm_buffer)
@@ -371,7 +388,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                 final_eval["raw_transcript"] = chosen_raw
                                 final_eval["recognized_speech_text"] = chosen_raw
                                 final_eval["source"] = "tarteel"
-                                final_eval["model_confidence"] = round(final_conf if final_conf > 0 else 0.88, 3)
+                                final_eval["model_confidence"] = round(final_conf, 3)
                                 eval_result = final_eval
                             else:
                                 eval_result["status"] = "evaluating"

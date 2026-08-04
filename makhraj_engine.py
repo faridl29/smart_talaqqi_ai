@@ -98,13 +98,185 @@ class MakhrajEngine:
             'anatomy': "Ujung lidah dijepit halus di antara dua gigi seri depan.",
             'tajweed_rule': 'Hams & Rakhawah (Desis Soft)',
         },
-        'ذ': {
-            'category': 'Tharful Lisan (Ujung Lidah)',
-            'guidance': "Dzal (ذ) tipis bergetar; ujung lidah di ujung dua gigi seri atas.",
-            'anatomy': "Ujung lidah menyentuh bagian ujung gigi seri atas tanpa ditekan keras.",
-            'tajweed_rule': 'Jahr & Tarqiq (Bergetar Tipis)',
+    }
+
+    # Panduan kategori hukum tajwid tingkat lanjut (Mad Far'i & Ghunnah Musyaddadah)
+    TAJWEED_RULE_GUIDANCE = {
+        'ghunnah_musyaddadah': {
+            'rule_name': 'Ghunnah Musyaddadah',
+            'category': 'Ghunnah (Dengung)',
+            'guidance': "Huruf nun (ن) atau mim (م) bertasydid wajib didengungkan dengan jelas selama ± 2 harakat (ghunnah musyaddadah).",
+            'anatomy': "Tahan dengung hidung (khaisyum) selama 2 ketukan sambil mempertahankan bunyi huruf.",
+        },
+        'mad_wajib_muttashil': {
+            'rule_name': 'Mad Wajib Muttashil',
+            'category': 'Mad Far\'i (4-5 Harakat)',
+            'guidance': "Mad bertemu hamzah dalam satu kata: wajib dibaca panjang 4-5 harakat.",
+            'anatomy': "Panjangkan suara mad tanpa terputus hingga bertemu hamzah pada kata yang sama.",
+        },
+        'mad_jaiz_munfashil': {
+            'rule_name': 'Mad Jaiz Munfashil',
+            'category': 'Mad Far\'i (4-5 Harakat)',
+            'guidance': "Mad bertemu hamzah pada kata berikutnya: boleh dibaca 2, 4, atau 5 harakat.",
+            'anatomy': "Panjangkan suara mad di akhir kata sebelum hamzah pada awal kata berikutnya.",
+        },
+        'mad_lazim': {
+            'rule_name': 'Mad Lazim',
+            'category': 'Mad Far\'i (6 Harakat)',
+            'guidance': "Mad bertemu sukun asli (bukan karena waqaf) dalam satu kata: wajib dibaca 6 harakat penuh.",
+            'anatomy': "Tahan suara mad selama 6 ketukan dengan kuat dan konsisten.",
+        },
+        'mad_aridh_lissukun': {
+            'rule_name': 'Mad Aridh Lis-Sukun',
+            'category': 'Mad Far\'i (2-6 Harakat)',
+            'guidance': "Mad bertemu sukun karena berhenti (waqaf) di akhir ayat: boleh dibaca 2, 4, atau 6 harakat.",
+            'anatomy': "Panjangkan suara mad saat berhenti di akhir kata.",
+        },
+        'mad_lin': {
+            'rule_name': 'Mad Lin (Mad Layyin)',
+            'category': 'Mad Far\'i (2-6 Harakat)',
+            'guidance': "Huruf waw (و) atau ya (ي) bersukun yang didahului fathah, lalu bertemu sukun karena waqaf: dibaca lunak 2, 4, atau 6 harakat.",
+            'anatomy': "Panjangkan bunyi waw/ya secara lunak tanpa tekanan saat berhenti.",
         },
     }
+
+    @staticmethod
+    def _strip_harakat(text: str) -> str:
+        """Hapus seluruh harakat & tanda baca (kecuali huruf & shadda/tasydid)."""
+        if not text:
+            return ''
+        s = re.sub('[\u064B-\u065F\u0670\u06D6-\u06ED\u0640]', '', text)
+        s = re.sub('[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]', '', s)
+        return s.replace('\u0651', '')
+
+    @classmethod
+    def _detect_tajweed_rules(cls, arabic_text: str) -> Dict[int, List[Dict[str, Any]]]:
+        """
+        Deteksi aturan tajwid tingkat lanjut pada setiap kata target:
+        - Ghunnah Musyaddadah (نّ / مّ bertasydid)
+        - Mad Wajib Muttashil / Jaiz Munfashil / Lazim / Aridh Lis-Sukun / Lin
+        Mengembalikan {word_index: [list of rule dicts]}
+        """
+        if not arabic_text:
+            return {}
+        words = [w for w in arabic_text.strip().split() if w]
+        rules_by_word: Dict[int, List[Dict[str, Any]]] = {}
+
+        for idx, word in enumerate(words):
+            rules: List[Dict[str, Any]] = []
+            stripped = cls._strip_harakat(word)
+
+            # ── 1. Ghunnah Musyaddadah: نّ / مّ (shadda bisa setelah harakat di Uthmani) ──
+            for i, c in enumerate(word):
+                if c == '\u0651':  # Shadda
+                    # Scan backward melewati harakat untuk menemukan huruf yang bertasydid
+                    j = i - 1
+                    while j >= 0 and '\u064B' <= word[j] <= '\u0652':
+                        j -= 1
+                    if j >= 0 and word[j] in ('ن', 'م'):
+                        rules.append({
+                            'type': 'ghunnah_musyaddadah',
+                            'letter': word[j] + '\u0651',
+                            'rule_name': cls.TAJWEED_RULE_GUIDANCE['ghunnah_musyaddadah']['rule_name'],
+                            'category': cls.TAJWEED_RULE_GUIDANCE['ghunnah_musyaddadah']['category'],
+                            'guidance': cls.TAJWEED_RULE_GUIDANCE['ghunnah_musyaddadah']['guidance'],
+                            'anatomy': cls.TAJWEED_RULE_GUIDANCE['ghunnah_musyaddadah']['anatomy'],
+                        })
+
+            # ── 2. Deteksi huruf mad & pengikutnya ──
+            alif_positions = [i for i, c in enumerate(stripped) if c == 'ا']
+            waw_ya_positions = [
+                (i, c) for i, c in enumerate(stripped) if c in ('و', 'ي')
+                and i + 1 < len(stripped)
+                and stripped[i + 1] not in ('و', 'ي', 'ا')
+            ]
+
+            # 2a. Alif setelah fathah (mad thabi'i / mad far'i)
+            for pos in alif_positions:
+                if pos == 0:
+                    continue
+                nxt = stripped[pos + 1] if pos + 1 < len(stripped) else None
+                # Mad Aridh Lis-Sukun: alif di akhir kata (berlaku saat waqaf)
+                if nxt is None:
+                    rules.append({
+                        'type': 'mad_aridh_lissukun',
+                        'letter': 'ا',
+                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_aridh_lissukun']['rule_name'],
+                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_aridh_lissukun']['category'],
+                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_aridh_lissukun']['guidance'],
+                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_aridh_lissukun']['anatomy'],
+                    })
+                    continue
+                # Mad Wajib Muttashil: alif bertemu hamzah pada kata yang sama
+                if nxt == 'ء':
+                    rules.append({
+                        'type': 'mad_wajib_muttashil',
+                        'letter': 'ا',
+                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['rule_name'],
+                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['category'],
+                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['guidance'],
+                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['anatomy'],
+                    })
+                    continue
+                # Mad Lazim Kilmi: alif diikuti huruf bersukun asli dalam satu kata
+                if nxt not in ('ا', 'و', 'ي', 'ء'):
+                    rules.append({
+                        'type': 'mad_lazim',
+                        'letter': 'ا',
+                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_lazim']['rule_name'],
+                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_lazim']['category'],
+                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_lazim']['guidance'],
+                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_lazim']['anatomy'],
+                    })
+                    continue
+                # Mad Jaiz Munfashil: alif di akhir kata sebelum hamzah (kata berikutnya)
+                if idx + 1 < len(words):
+                    next_word = cls._strip_harakat(words[idx + 1])
+                    if next_word.startswith('ا') and len(next_word) > 1 and next_word[1] == 'ء':
+                        rules.append({
+                            'type': 'mad_jaiz_munfashil',
+                            'letter': 'ا',
+                            'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_jaiz_munfashil']['rule_name'],
+                            'category': cls.TAJWEED_RULE_GUIDANCE['mad_jaiz_munfashil']['category'],
+                            'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_jaiz_munfashil']['guidance'],
+                            'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_jaiz_munfashil']['anatomy'],
+                        })
+
+            # 2b. Waw / Ya: hanya Mad Lin di akhir kata atau Mad Wajib Muttashil dgn hamzah
+            for pos, c in waw_ya_positions:
+                # Mad Lin: waw/ya di akhir kata (berlaku saat waqaf)
+                if pos == len(stripped) - 1:
+                    rules.append({
+                        'type': 'mad_lin',
+                        'letter': c,
+                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_lin']['rule_name'],
+                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_lin']['category'],
+                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_lin']['guidance'],
+                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_lin']['anatomy'],
+                    })
+                    continue
+                # Mad Wajib Muttashil: waw/ya bertemu hamzah dalam satu kata
+                if stripped[pos + 1] == 'ء':
+                    rules.append({
+                        'type': 'mad_wajib_muttashil',
+                        'letter': c,
+                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['rule_name'],
+                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['category'],
+                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['guidance'],
+                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['anatomy'],
+                    })
+
+            # Hindari duplikasi rule yang sama pada satu kata
+            seen: set = set()
+            unique_rules = []
+            for r in rules:
+                key = r['type']
+                if key not in seen:
+                    seen.add(key)
+                    unique_rules.append(r)
+            rules_by_word[idx] = unique_rules
+
+        return rules_by_word
 
     @staticmethod
     def normalize_arabic(text: str) -> str:
@@ -413,6 +585,9 @@ class MakhrajEngine:
 
         read_words_count = matched_words_count + wrong_words_count
 
+        # Deteksi aturan tajwid tingkat lanjut per-kata (Ghunnah Musyaddadah & Mad Far'i)
+        tajweed_rules = cls._detect_tajweed_rules(target_ayah_text)
+
         return {
             'accuracy': accuracy,
             'partial_accuracy': partial_accuracy,
@@ -429,10 +604,14 @@ class MakhrajEngine:
             'matched_phonemes': matched,
             'word_results': word_results,
             'makhraj_errors': makhraj_errors,
+            'tajweed_rules': tajweed_rules,
             'teacher_feedback': feedback,
             'target_phonemes': ' '.join(target_tokens),
             'recognized_phonemes': ' '.join(rec_tokens),
             'recognized_speech_text': recognized_speech_text,
+            'diagnosis_basis': 'phoneme_text_matching',
+            # ponytail: deteksi makhraj akustik (spektral/formant) belum ada —
+            # diagnosis saat ini berbasis perbandingan fonem dari transkrip ASR.
         }
 
     @classmethod
