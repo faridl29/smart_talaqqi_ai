@@ -38,6 +38,7 @@ async def _shutdown():
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from makhraj_engine import MakhrajEngine
@@ -77,6 +78,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─── API Key Authentication ───
+# Blokir akses liar ke engine ASR. Key dibaca dari env API_KEY (wajib di production).
+# Semua endpoint (HTTP + WebSocket) butuh header X-API-Key yang cocok.
+# Catatan: key di app client bisa diekstrak (rooted device) — ini anti-abuse bar,
+# bukan keamanan absolut. Kombinasi dengan firewall + HTTPS.
+_API_KEYS: Set[str] = set()
+_raw_keys = os.getenv("API_KEYS", "").strip()
+if _raw_keys:
+    _API_KEYS = {k.strip() for k in _raw_keys.split(",") if k.strip()}
+_require_api_key: bool = bool(_API_KEYS)  # jika API_KEYS kosong → auth nonaktif (dev mode)
+
+_WS_OPEN_PATHS = {"/", "/health", "/api/v1/talaqqi/health"}
+
+
+@app.middleware("http")
+async def api_key_http_middleware(request: Request, call_next):
+    if not _require_api_key:
+        return await call_next(request)
+    # Health check tetap publik (untuk monitor/load balancer)
+    if request.url.path in _WS_OPEN_PATHS:
+        return await call_next(request)
+    key = request.headers.get("X-API-Key", "")
+    if key not in _API_KEYS:
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized: invalid or missing API key"})
+    return await call_next(request)
 
 
 class RecitationRequest(BaseModel):
@@ -149,6 +176,13 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
     WebSocket Real-Time Audio Stream Endpoint (Tarteel Quran ASR).
     Receives raw PCM 16kHz 16-bit mono stream and returns real-time makhraj evaluation.
     """
+    # API Key Auth (header dibaca sebelum accept)
+    if _require_api_key:
+        ws_key = websocket.headers.get("X-API-Key", "")
+        if ws_key not in _API_KEYS:
+            await websocket.close(code=4401, reason="Unauthorized: invalid or missing API key")
+            return
+
     await websocket.accept()
     logger.info("Client WebSocket terkoneksi ke Talaqqi AI Server.")
 
