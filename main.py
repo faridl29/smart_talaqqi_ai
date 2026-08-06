@@ -12,7 +12,7 @@ import time
 import json
 import logging
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Set
+from typing import Dict, Any, Set, Optional
 
 # Environment & Math thread limits for 2 vCPU VPS deployment
 try:
@@ -36,7 +36,7 @@ async def _shutdown():
     for task in asyncio.all_tasks():
         task.cancel()
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -76,6 +76,9 @@ app.add_middleware(
 class RecitationRequest(BaseModel):
     target_ayah_text: str
     recognized_speech_text: str
+    lang: Optional[str] = "id"
+    language: Optional[str] = None
+    locale: Optional[str] = None
 
 
 @app.get("/")
@@ -101,18 +104,26 @@ async def health_check() -> Dict[str, Any]:
 
 
 @app.post("/api/v1/talaqqi/evaluate")
-async def evaluate_recitation(req: RecitationRequest) -> Dict[str, Any]:
+async def evaluate_recitation(req: RecitationRequest, request: Request) -> Dict[str, Any]:
     """
     HTTP REST Endpoint for offline/post-recitation evaluation & makhraj diagnosis.
     """
     try:
+        raw_lang = req.lang or req.language or req.locale or request.headers.get("accept-language", "id")
+        if "," in raw_lang:
+            raw_lang = raw_lang.split(",")[0]
+        if ";" in raw_lang:
+            raw_lang = raw_lang.split(";")[0]
+        lang_code = raw_lang.strip()[:2].lower()
+
         logger.info(
-            f"[HTTP REST] Request Evaluasi -> Target: '{req.target_ayah_text[:30]}...' | "
+            f"[HTTP REST] Request Evaluasi (Lang: '{lang_code}') -> Target: '{req.target_ayah_text[:30]}...' | "
             f"Recognized: '{req.recognized_speech_text}'"
         )
         result = MakhrajEngine.evaluate_realtime_stream(
             target_ayah_text=req.target_ayah_text,
-            recognized_speech_text=req.recognized_speech_text
+            recognized_speech_text=req.recognized_speech_text,
+            lang=lang_code,
         )
         logger.info(
             f"[HTTP REST] Hasil Evaluasi -> Accuracy: {result.get('accuracy')}%, "
@@ -135,6 +146,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
     logger.info("Client WebSocket terkoneksi ke Talaqqi AI Server.")
 
     target_ayah_text: str = ""
+    session_lang: str = "id"
     audio_pcm_buffer: bytearray = bytearray()
     has_spoken_recently: bool = False
 
@@ -206,6 +218,9 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
 
                 if action == "init":
                     target_ayah_text = data.get("target_ayah_text", "")
+                    raw_lang = data.get("lang") or data.get("language") or data.get("locale") or "id"
+                    session_lang = raw_lang.strip()[:2].lower()
+
                     audio_pcm_buffer.clear()
                     last_audio_eval_size = 0
                     has_spoken_recently = False
@@ -215,7 +230,7 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                     session_matched_indices.clear()
                     session_transcribed_words.clear()
                     session_word_similarities.clear()
-                    logger.info(f"[WebSocket] Init Talaqqi Stream untuk Target Ayat: '{target_ayah_text}'")
+                    logger.info(f"[WebSocket] Init Talaqqi Stream (Lang: '{session_lang}') untuk Target Ayat: '{target_ayah_text}'")
                     await websocket.send_json({
                         "status": "initialized",
                         "tarteel_ready": TarteelASR.is_available(),
@@ -236,7 +251,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             t_asr = time.time() - t0
                             final_result = MakhrajEngine.evaluate_realtime_stream(
                                 target_ayah_text=target_ayah_text,
-                                recognized_speech_text=raw_transcript
+                                recognized_speech_text=raw_transcript,
+                                lang=session_lang,
                             )
                             final_result["raw_transcript"] = raw_transcript
                             final_result["recognized_speech_text"] = raw_transcript
@@ -350,7 +366,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
 
                             eval_result = MakhrajEngine.evaluate_realtime_stream(
                                 target_ayah_text=target_ayah_text,
-                                recognized_speech_text=accumulated_text if len(accumulated_text.split()) > len(clean.split()) else clean
+                                recognized_speech_text=accumulated_text if len(accumulated_text.split()) > len(clean.split()) else clean,
+                                lang=session_lang,
                             )
 
                             actual_matched = sum(
@@ -387,7 +404,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
 
                                 final_eval = MakhrajEngine.evaluate_realtime_stream(
                                     target_ayah_text=target_ayah_text,
-                                    recognized_speech_text=chosen_raw
+                                    recognized_speech_text=chosen_raw,
+                                    lang=session_lang,
                                 )
                                 final_eval["status"] = "auto_completed"
                                 final_eval["raw_transcript"] = chosen_raw

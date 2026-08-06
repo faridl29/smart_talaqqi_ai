@@ -26,119 +26,363 @@ class MakhrajEngine:
     """Engine Analisis Makhraj Akustik Real-Time berbasis PHONEME MATCHING."""
 
     MAKHRAJ_GUIDANCE = {
-        'ح': {
-            'category': 'Wasathul Halq (Tengah Tenggorokan)',
-            'guidance': "Huruf Haa (ح) keluar dari tengah tenggorokan. Suara bersih mengalir halus tanpa hambatan dada.",
-            'anatomy': "Tekan bagian tengah tenggorokan (epiglottis) secara halus ke dinding tenggorokan.",
-            'tajweed_rule': 'Hams & Rakhawah (Desis & Mengalir)',
+        'id': {
+            'ح': {
+                'category': 'Wasathul Halq (Tengah Tenggorokan)',
+                'guidance': "Huruf Haa (ح) keluar dari tengah tenggorokan. Suara bersih mengalir halus tanpa hambatan dada.",
+                'anatomy': "Tekan bagian tengah tenggorokan (epiglottis) secara halus ke dinding tenggorokan.",
+                'tajweed_rule': 'Hams & Rakhawah (Desis & Mengalir)',
+            },
+            'ع': {
+                'category': 'Wasathul Halq (Tengah Tenggorokan)',
+                'guidance': "Huruf 'Ain (ع) keluar dari tengah tenggorokan dengan sedikit penekanan lisan.",
+                'anatomy': "Penyempitan di tengah tenggorokan dengan pita suara bergetar sedang.",
+                'tajweed_rule': 'Tawassut (Suara Sedang)',
+            },
+            'ه': {
+                'category': 'Aqshal Halq (Dasar Tenggorokan)',
+                'guidance': "Huruf Ha (ه) dari pangkal/dasar tenggorokan dekat dada; hembusan napas dalam.",
+                'anatomy': "Pita suara di pangkal tenggorokan paling bawah terbuka agak lebar.",
+                'tajweed_rule': 'Hams & Tarqiq (Desis Tipis)',
+            },
+            'خ': {
+                'category': 'Adnal Halq (Ujung Tenggorokan)',
+                'guidance': "Huruf Khaa (خ) keluar dari ujung tenggorokan paling atas dekat rongga mulut.",
+                'anatomy': "Pertemuan ujung tenggorokan atas dengan pangkal langit-langit mulut.",
+                'tajweed_rule': "Isti'la & Hams (Tebal & Desis)",
+            },
+            'غ': {
+                'category': 'Adnal Halq (Ujung Tenggorokan)',
+                'guidance': "Huruf Ghain (غ) keluar dari ujung tenggorokan; suara tebal bergema mengalir.",
+                'anatomy': "Pangkal lidah paling belakang terangkat mendekati ujung tenggorokan.",
+                'tajweed_rule': "Isti'la & Jahr (Tebal & Bergetar)",
+            },
+            'ص': {
+                'category': "Isti'la / Tebal (Shafir)",
+                'guidance': "Shaad (ص) huruf tebal & berdesis kuat. Bedakan dengan Siin (س) yang tipis.",
+                'anatomy': "Ujung lidah di belakang gigi seri bawah, pangkal lidah terangkat membulat ke atas.",
+                'tajweed_rule': 'Itbaq & Shafir (Tebal & Desis Tajam)',
+            },
+            'ض': {
+                'category': 'Hafatul Lisan (Tepi Lidah)',
+                'guidance': "Dhaad (ض) dari tepi lidah menempel ke geraham atas; jangan dibaca tipis seperti Daal (د).",
+                'anatomy': "Salah satu atau kedua tepi lidah menempel kuat pada dinding gigi geraham atas.",
+                'tajweed_rule': 'Istithalah (Suara Memanjang & Tebal)',
+            },
+            'ط': {
+                'category': "Isti'la / Tebal (Itbaq)",
+                'guidance': "Thaa (ط) huruf paling tebal; ujung lidah di pangkal gigi seri atas.",
+                'anatomy': "Ujung lidah menempel di gusi gigi seri atas, seluruh badan lidah terangkat.",
+                'tajweed_rule': "Itbaq & Qalqalah (Tebal & Memantul)",
+            },
+            'ظ': {
+                'category': 'Tharful Lisan (Ujung Lidah)',
+                'guidance': "Zhaa (ظ) dilafalkan tebal dengan ujung lidah sedikit keluar menyentuh ujung gigi seri atas.",
+                'anatomy': "Ujung permukaan lidah sedikit menyentuh ujung dua gigi seri atas secara tebal.",
+                'tajweed_rule': "Itbaq & Isti'la (Tebal Penuh)",
+            },
+            'ق': {
+                'category': 'Aqshal Lisan (Pangkal Lidah)',
+                'guidance': "Qaaf (ق) keluar dari pangkal lidah paling belakang menempel langit-langit lunak.",
+                'anatomy': "Pangkal lidah paling belakang menempel rapat ke langit-langit lunak (uvula).",
+                'tajweed_rule': "Isti'la & Qalqalah (Tebal & Memantul Kuat)",
+            },
+            'ك': {
+                'category': 'Aqshal Lisan (Pangkal Lidah)',
+                'guidance': "Kaf (ك) keluar dari pangkal lidah sedikit di depan posisi Qaaf (ق); tipis berhembus.",
+                'anatomy': "Pangkal lidah bagian depan menempel ke langit-langit keras lalu terlepas berhembus.",
+                'tajweed_rule': 'Hams & Tarqiq (Desis Tipis)',
+            },
+            'ث': {
+                'category': 'Tharful Lisan (Ujung Lidah)',
+                'guidance': "Tsaa (ث) dengan ujung lidah sedikit keluar menyentuh ujung gigi seri atas secara lembut.",
+                'anatomy': "Ujung lidah dijepit halus di antara dua gigi seri depan.",
+                'tajweed_rule': 'Hams & Rakhawah (Desis Soft)',
+            },
         },
-        'ع': {
-            'category': 'Wasathul Halq (Tengah Tenggorokan)',
-            'guidance': "Huruf 'Ain (ع) keluar dari tengah tenggorokan dengan sedikit penekanan lisan.",
-            'anatomy': "Penyempitan di tengah tenggorokan dengan pita suara bergetar sedang.",
-            'tajweed_rule': 'Tawassut (Suara Sedang)',
+        'en': {
+            'ح': {
+                'category': 'Wasathul Halq (Middle Throat)',
+                'guidance': "The letter Haa (ح) comes from the middle of the throat with a clean sound.",
+                'anatomy': "Press the epiglottis gently against the throat wall.",
+                'tajweed_rule': 'Hams & Rakhawah (Whispered & Soft)',
+            },
+            'ع': {
+                'category': 'Wasathul Halq (Middle Throat)',
+                'guidance': "The letter 'Ain (ع) comes from the middle of the throat with slight pressure.",
+                'anatomy': "Constriction in the middle throat with moderate vocal cord vibration.",
+                'tajweed_rule': 'Tawassut (Moderate Sound)',
+            },
+            'ه': {
+                'category': 'Aqshal Halq (Deep Throat)',
+                'guidance': "The letter Ha (ه) originates from the bottom of the throat near the chest.",
+                'anatomy': "Vocal cords at the lowest part of the throat open slightly wide.",
+                'tajweed_rule': 'Hams & Tarqiq (Whispered & Thin)',
+            },
+            'خ': {
+                'category': 'Adnal Halq (Upper Throat)',
+                'guidance': "The letter Khaa (خ) comes from the upper throat near the mouth cavity.",
+                'anatomy': "Contact between upper throat and soft palate root.",
+                'tajweed_rule': "Isti'la & Hams (Heavy & Whispered)",
+            },
+            'غ': {
+                'category': 'Adnal Halq (Upper Throat)',
+                'guidance': "The letter Ghain (غ) comes from the upper throat with a heavy sound.",
+                'anatomy': "Back of the tongue raised towards the upper throat.",
+                'tajweed_rule': "Isti'la & Jahr (Heavy & Voiced)",
+            },
+            'ص': {
+                'category': "Isti'la / Heavy (Shafir)",
+                'guidance': "Shaad (ص) is a heavy letter with strong whistling sound.",
+                'anatomy': "Tongue tip behind lower front teeth, back of tongue elevated.",
+                'tajweed_rule': 'Itbaq & Shafir (Heavy & Sharp Whistle)',
+            },
+            'ض': {
+                'category': 'Hafatul Lisan (Tongue Side)',
+                'guidance': "Dhaad (ض) comes from the side of the tongue touching the upper molars.",
+                'anatomy': "One or both sides of the tongue press firmly against upper molars.",
+                'tajweed_rule': 'Istithalah (Elongated & Heavy)',
+            },
+            'ط': {
+                'category': "Isti'la / Heavy (Itbaq)",
+                'guidance': "Thaa (ط) is the heaviest letter; tongue tip at root of upper front teeth.",
+                'anatomy': "Tongue tip at gums of upper front teeth, entire tongue elevated.",
+                'tajweed_rule': "Itbaq & Qalqalah (Heavy & Echoing)",
+            },
+            'ظ': {
+                'category': 'Tharful Lisan (Tongue Tip)',
+                'guidance': "Zhaa (ظ) is pronounced heavy with tongue tip touching upper front teeth.",
+                'anatomy': "Tip of tongue slightly touches edges of two upper front teeth.",
+                'tajweed_rule': "Itbaq & Isti'la (Full Heavy)",
+            },
+            'ق': {
+                'category': 'Aqshal Lisan (Back of Tongue)',
+                'guidance': "Qaaf (ق) comes from the backmost part of the tongue against the soft palate.",
+                'anatomy': "Back of tongue pressed tightly against soft palate.",
+                'tajweed_rule': "Isti'la & Qalqalah (Heavy & Strong Echo)",
+            },
+            'ك': {
+                'category': 'Aqshal Lisan (Back of Tongue)',
+                'guidance': "Kaf (ك) comes slightly forward from Qaaf; thin and whispered.",
+                'anatomy': "Front part of back tongue touches hard palate then releases breath.",
+                'tajweed_rule': 'Hams & Tarqiq (Whispered & Thin)',
+            },
+            'ث': {
+                'category': 'Tharful Lisan (Tongue Tip)',
+                'guidance': "Tsaa (ث) with tongue tip slightly out, touching edge of upper front teeth.",
+                'anatomy': "Tongue tip placed softly between upper and lower front teeth.",
+                'tajweed_rule': 'Hams & Rakhawah (Soft Whispered)',
+            },
         },
-        'ه': {
-            'category': 'Aqshal Halq (Dasar Tenggorokan)',
-            'guidance': "Huruf Ha (ه) dari pangkal/dasar tenggorokan dekat dada; hembusan napas dalam.",
-            'anatomy': "Pita suara di pangkal tenggorokan paling bawah terbuka agak lebar.",
-            'tajweed_rule': 'Hams & Tarqiq (Desis Tipis)',
-        },
-        'خ': {
-            'category': 'Adnal Halq (Ujung Tenggorokan)',
-            'guidance': "Huruf Khaa (خ) keluar dari ujung tenggorokan paling atas dekat rongga mulut.",
-            'anatomy': "Pertemuan ujung tenggorokan atas dengan pangkal langit-langit mulut.",
-            'tajweed_rule': "Isti'la & Hams (Tebal & Desis)",
-        },
-        'غ': {
-            'category': 'Adnal Halq (Ujung Tenggorokan)',
-            'guidance': "Huruf Ghain (غ) keluar dari ujung tenggorokan; suara tebal bergema mengalir.",
-            'anatomy': "Pangkal lidah paling belakang terangkat mendekati ujung tenggorokan.",
-            'tajweed_rule': "Isti'la & Jahr (Tebal & Bergetar)",
-        },
-        'ص': {
-            'category': "Isti'la / Tebal (Shafir)",
-            'guidance': "Shaad (ص) huruf tebal & berdesis kuat. Bedakan dengan Siin (س) yang tipis.",
-            'anatomy': "Ujung lidah di belakang gigi seri bawah, pangkal lidah terangkat membulat ke atas.",
-            'tajweed_rule': 'Itbaq & Shafir (Tebal & Desis Tajam)',
-        },
-        'ض': {
-            'category': 'Hafatul Lisan (Tepi Lidah)',
-            'guidance': "Dhaad (ض) dari tepi lidah menempel ke geraham atas; jangan dibaca tipis seperti Daal (د).",
-            'anatomy': "Salah satu atau kedua tepi lidah menempel kuat pada dinding gigi geraham atas.",
-            'tajweed_rule': 'Istithalah (Suara Memanjang & Tebal)',
-        },
-        'ط': {
-            'category': "Isti'la / Tebal (Itbaq)",
-            'guidance': "Thaa (ط) huruf paling tebal; ujung lidah di pangkal gigi seri atas.",
-            'anatomy': "Ujung lidah menempel di gusi gigi seri atas, seluruh badan lidah terangkat.",
-            'tajweed_rule': "Itbaq & Qalqalah (Tebal & Memantul)",
-        },
-        'ظ': {
-            'category': 'Tharful Lisan (Ujung Lidah)',
-            'guidance': "Zhaa (ظ) dilafalkan tebal dengan ujung lidah sedikit keluar menyentuh ujung gigi seri atas.",
-            'anatomy': "Ujung permukaan lidah sedikit menyentuh ujung dua gigi seri atas secara tebal.",
-            'tajweed_rule': "Itbaq & Isti'la (Tebal Penuh)",
-        },
-        'ق': {
-            'category': 'Aqshal Lisan (Pangkal Lidah)',
-            'guidance': "Qaaf (ق) keluar dari pangkal lidah paling belakang menempel langit-langit lunak.",
-            'anatomy': "Pangkal lidah paling belakang menempel rapat ke langit-langit lunak (uvula).",
-            'tajweed_rule': "Isti'la & Qalqalah (Tebal & Memantul Kuat)",
-        },
-        'ك': {
-            'category': 'Aqshal Lisan (Pangkal Lidah)',
-            'guidance': "Kaf (ك) keluar dari pangkal lidah sedikit di depan posisi Qaaf (ق); tipis berhembus.",
-            'anatomy': "Pangkal lidah bagian depan menempel ke langit-langit keras lalu terlepas berhembus.",
-            'tajweed_rule': 'Hams & Tarqiq (Desis Tipis)',
-        },
-        'ث': {
-            'category': 'Tharful Lisan (Ujung Lidah)',
-            'guidance': "Tsaa (ث) dengan ujung lidah sedikit keluar menyentuh ujung gigi seri atas secara lembut.",
-            'anatomy': "Ujung lidah dijepit halus di antara dua gigi seri depan.",
-            'tajweed_rule': 'Hams & Rakhawah (Desis Soft)',
-        },
+        'ar': {
+            'ح': {
+                'category': 'وسط الحلق',
+                'guidance': "يخرج حرف الحاء (ح) من وسط الحلق بصوت صافٍ ولطيف.",
+                'anatomy': "اضغط على وسط الحلق (لسان المزمار) برفق.",
+                'tajweed_rule': 'الهمس والرخاوة',
+            },
+            'ع': {
+                'category': 'وسط الحلق',
+                'guidance': "يخرج حرف العين (ع) من وسط الحلق مع ضغط خفيف.",
+                'anatomy': "تضييق في وسط الحلق مع اهتزاز الأوتار الصوتية.",
+                'tajweed_rule': 'التوسط',
+            },
+            'ه': {
+                'category': 'أقصى الحلق',
+                'guidance': "يخرج حرف الهاء (هـ) من أقصى الحلق قريباً من الصدر.",
+                'anatomy': "انفتاح الأوتار الصوتية في أسفل الحلق.",
+                'tajweed_rule': 'الهمس والترقيق',
+            },
+            'خ': {
+                'category': 'أدنى الحلق',
+                'guidance': "يخرج حرف الخاء (خ) من أدنى الحلق قريباً من الفم.",
+                'anatomy': "التقاء أدنى الحلق مع حنك الفم الرخو.",
+                'tajweed_rule': 'الاستعلاء والهمس',
+            },
+            'غ': {
+                'category': 'أدنى الحلق',
+                'guidance': "يخرج حرف الغين (غ) من أدنى الحلق بصوت مفخم.",
+                'anatomy': "ارتفاع أقصى اللسان نحو أدنى الحلق.",
+                'tajweed_rule': 'الاستعلاء والجهر',
+            },
+            'ص': {
+                'category': 'حرف مفخم (الصفير)',
+                'guidance': "حرف الصاد (ص) مفخم وفيه صفير قوي.",
+                'anatomy': "طرف اللسان خلف الأسنان السفلى مع ارتفاع أقصى اللسان.",
+                'tajweed_rule': 'الإطباق والصفير',
+            },
+            'ض': {
+                'category': 'حافة اللسان',
+                'guidance': "يخرج حرف الضاد (ض) من إحدى حافتي اللسان مع الأضراس العليا.",
+                'anatomy': "اتصال حافة اللسان بالأضراس العليا.",
+                'tajweed_rule': 'الاستطالة والتفخيم',
+            },
+            'ط': {
+                'category': 'حرف مفخم (الإطباق)',
+                'guidance': "حرف الطاء (ط) أقوى الحروف تفخيماً.",
+                'anatomy': "طرف اللسان عند أصول الثنايا العليا مع انطباق اللسان.",
+                'tajweed_rule': 'الإطباق والقلقلة',
+            },
+            'ظ': {
+                'category': 'طرف اللسان',
+                'guidance': "يخرج حرف الظاء (ظ) مفخماً مع خروج طرف اللسان قليلاً.",
+                'anatomy': "ملامسة طرف اللسان لأطراف الثنايا العليا.",
+                'tajweed_rule': 'الإطباق والاستعلاء',
+            },
+            'ق': {
+                'category': 'أقصى اللسان',
+                'guidance': "يخرج حرف القاف (ق) من أقصى اللسان مع الحنك الأعلى.",
+                'anatomy': "التصاق أقصى اللسان بالحنك الرخو.",
+                'tajweed_rule': 'الاستعلاء والقلقلة',
+            },
+            'ك': {
+                'category': 'أقصى اللسان',
+                'guidance': "يخرج حرف الكاف (ك) أسفل من القاف قليلاً وهو مهموس ترقيق.",
+                'anatomy': "ملامسة اللسان للحنك الصلب ثم انبعاث الهواء.",
+                'tajweed_rule': 'الهمس والترقيق',
+            },
+            'ث': {
+                'category': 'طرف اللسان',
+                'guidance': "يخرج حرف الثاء (ث) بملامسة طرف اللسان لأطراف الثنايا العليا.",
+                'anatomy': "وضع طرف اللسان بين الثنايا العليا والسفلى برفق.",
+                'tajweed_rule': 'الهمس والرخاوة',
+            },
+        }
     }
 
     # Panduan kategori hukum tajwid tingkat lanjut (Mad Far'i & Ghunnah Musyaddadah)
     TAJWEED_RULE_GUIDANCE = {
-        'ghunnah_musyaddadah': {
-            'rule_name': 'Ghunnah Musyaddadah',
-            'category': 'Ghunnah (Dengung)',
-            'guidance': "Huruf nun (ن) atau mim (م) bertasydid wajib didengungkan dengan jelas selama ± 2 harakat (ghunnah musyaddadah).",
-            'anatomy': "Tahan dengung hidung (khaisyum) selama 2 ketukan sambil mempertahankan bunyi huruf.",
+        'id': {
+            'ghunnah_musyaddadah': {
+                'rule_name': 'Ghunnah Musyaddadah',
+                'category': 'Ghunnah (Dengung)',
+                'guidance': "Huruf nun (ن) atau mim (م) bertasydid wajib didengungkan dengan jelas selama ± 2 harakat (ghunnah musyaddadah).",
+                'anatomy': "Tahan dengung hidung (khaisyum) selama 2 ketukan sambil mempertahankan bunyi huruf.",
+            },
+            'mad_wajib_muttashil': {
+                'rule_name': 'Mad Wajib Muttashil',
+                'category': 'Mad Far\'i (4-5 Harakat)',
+                'guidance': "Mad bertemu hamzah dalam satu kata: wajib dibaca panjang 4-5 harakat.",
+                'anatomy': "Panjangkan suara mad tanpa terputus hingga bertemu hamzah pada kata yang sama.",
+            },
+            'mad_jaiz_munfashil': {
+                'rule_name': 'Mad Jaiz Munfashil',
+                'category': 'Mad Far\'i (4-5 Harakat)',
+                'guidance': "Mad bertemu hamzah pada kata berikutnya: boleh dibaca 2, 4, atau 5 harakat.",
+                'anatomy': "Panjangkan suara mad di akhir kata sebelum hamzah pada awal kata berikutnya.",
+            },
+            'mad_lazim': {
+                'rule_name': 'Mad Lazim',
+                'category': 'Mad Far\'i (6 Harakat)',
+                'guidance': "Mad bertemu sukun asli (bukan karena waqaf) dalam satu kata: wajib dibaca 6 harakat penuh.",
+                'anatomy': "Tahan suara mad selama 6 ketukan dengan kuat dan konsisten.",
+            },
+            'mad_aridh_lissukun': {
+                'rule_name': 'Mad Aridh Lis-Sukun',
+                'category': 'Mad Far\'i (2-6 Harakat)',
+                'guidance': "Mad bertemu sukun karena berhenti (waqaf) di akhir ayat: boleh dibaca 2, 4, atau 6 harakat.",
+                'anatomy': "Panjangkan suara mad saat berhenti di akhir kata.",
+            },
+            'mad_lin': {
+                'rule_name': 'Mad Lin (Mad Layyin)',
+                'category': 'Mad Far\'i (2-6 Harakat)',
+                'guidance': "Huruf waw (و) atau ya (ي) bersukun yang didahului fathah, lalu bertemu sukun karena waqaf: dibaca lunak 2, 4, atau 6 harakat.",
+                'anatomy': "Panjangkan bunyi waw/ya secara lunak tanpa tekanan saat berhenti.",
+            },
         },
-        'mad_wajib_muttashil': {
-            'rule_name': 'Mad Wajib Muttashil',
-            'category': 'Mad Far\'i (4-5 Harakat)',
-            'guidance': "Mad bertemu hamzah dalam satu kata: wajib dibaca panjang 4-5 harakat.",
-            'anatomy': "Panjangkan suara mad tanpa terputus hingga bertemu hamzah pada kata yang sama.",
+        'en': {
+            'ghunnah_musyaddadah': {
+                'rule_name': 'Ghunnah Musyaddadah',
+                'category': 'Ghunnah (Nasalization)',
+                'guidance': "Nun (ن) or Mim (م) with shaddah must be nasalized clearly for 2 counts.",
+                'anatomy': "Hold nasal sound through the nose for 2 beats while maintaining letter sound.",
+            },
+            'mad_wajib_muttashil': {
+                'rule_name': 'Mad Wajib Muttashil',
+                'category': 'Mad Far\'i (4-5 Counts)',
+                'guidance': "Mad followed by hamzah in the same word: must be prolonged 4-5 counts.",
+                'anatomy': "Prolong the mad sound continuously until reaching the hamzah in the same word.",
+            },
+            'mad_jaiz_munfashil': {
+                'rule_name': 'Mad Jaiz Munfashil',
+                'category': 'Mad Far\'i (4-5 Counts)',
+                'guidance': "Mad followed by hamzah in the next word: may be prolonged 2, 4, or 5 counts.",
+                'anatomy': "Prolong the mad sound at the end of word before hamzah at start of next word.",
+            },
+            'mad_lazim': {
+                'rule_name': 'Mad Lazim',
+                'category': 'Mad Far\'i (6 Counts)',
+                'guidance': "Mad followed by original sukun in the same word: must be prolonged 6 full counts.",
+                'anatomy': "Hold the mad sound for 6 full beats strongly and consistently.",
+            },
+            'mad_aridh_lissukun': {
+                'rule_name': 'Mad Aridh Lis-Sukun',
+                'category': 'Mad Far\'i (2-6 Counts)',
+                'guidance': "Mad followed by sukun due to stopping (waqaf): may be prolonged 2, 4, or 6 counts.",
+                'anatomy': "Prolong the mad sound when stopping at the end of a word.",
+            },
+            'mad_lin': {
+                'rule_name': 'Mad Lin',
+                'category': 'Mad Far\'i (2-6 Counts)',
+                'guidance': "Waw or Ya with sukun preceded by fathah before waqaf sukun: pronounced soft 2-6 counts.",
+                'anatomy': "Prolong the waw/ya sound softly without pressure when stopping.",
+            },
         },
-        'mad_jaiz_munfashil': {
-            'rule_name': 'Mad Jaiz Munfashil',
-            'category': 'Mad Far\'i (4-5 Harakat)',
-            'guidance': "Mad bertemu hamzah pada kata berikutnya: boleh dibaca 2, 4, atau 5 harakat.",
-            'anatomy': "Panjangkan suara mad di akhir kata sebelum hamzah pada awal kata berikutnya.",
-        },
-        'mad_lazim': {
-            'rule_name': 'Mad Lazim',
-            'category': 'Mad Far\'i (6 Harakat)',
-            'guidance': "Mad bertemu sukun asli (bukan karena waqaf) dalam satu kata: wajib dibaca 6 harakat penuh.",
-            'anatomy': "Tahan suara mad selama 6 ketukan dengan kuat dan konsisten.",
-        },
-        'mad_aridh_lissukun': {
-            'rule_name': 'Mad Aridh Lis-Sukun',
-            'category': 'Mad Far\'i (2-6 Harakat)',
-            'guidance': "Mad bertemu sukun karena berhenti (waqaf) di akhir ayat: boleh dibaca 2, 4, atau 6 harakat.",
-            'anatomy': "Panjangkan suara mad saat berhenti di akhir kata.",
-        },
-        'mad_lin': {
-            'rule_name': 'Mad Lin (Mad Layyin)',
-            'category': 'Mad Far\'i (2-6 Harakat)',
-            'guidance': "Huruf waw (و) atau ya (ي) bersukun yang didahului fathah, lalu bertemu sukun karena waqaf: dibaca lunak 2, 4, atau 6 harakat.",
-            'anatomy': "Panjangkan bunyi waw/ya secara lunak tanpa tekanan saat berhenti.",
-        },
+        'ar': {
+            'ghunnah_musyaddadah': {
+                'rule_name': 'غنة مشددة',
+                'category': 'الغنة',
+                'guidance': "النون أو الميم المشددة تجب فيها الغنة بمقدار حركتين.",
+                'anatomy': "إخراج الصوت من الخيشوم بمقدار حركتين.",
+            },
+            'mad_wajib_muttashil': {
+                'rule_name': 'مد واجب متصل',
+                'category': 'مد فرعي (4-5 حرَكات)',
+                'guidance': "مجيء الهمزة بعد حرف المد في كلمة واحدة: يمد 4-5 حركات.",
+                'anatomy': "مد الصوت متصلاً حتى الهمزة في نفس الكلمة.",
+            },
+            'mad_jaiz_munfashil': {
+                'rule_name': 'مد جائز منفصل',
+                'category': 'مد فرعي (4-5 حرَكات)',
+                'guidance': "مجيء الهمزة بعد حرف المد في كلمة أخرى: يمد 2 أو 4 أو 5 حركات.",
+                'anatomy': "مد الصوت في آخر الكلمة قبل الهمزة.",
+            },
+            'mad_lazim': {
+                'rule_name': 'مد لازم',
+                'category': 'مد فرعي (6 حرَكات)',
+                'guidance': "مجيء السكون الأصلي بعد حرف المد: يمد 6 حركات لزوماً.",
+                'anatomy': "تمكين المد 6 حركات كاملة بقوة.",
+            },
+            'mad_aridh_lissukun': {
+                'rule_name': 'مد عارض للسكون',
+                'category': 'مد فرعي (2-6 حرَكات)',
+                'guidance': "مجيء السكون بسبب الوقف بعد حرف المد: يمد 2 أو 4 أو 6 حركات.",
+                'anatomy': "مد الصوت عند الوقف في آخر الكلمة.",
+            },
+            'mad_lin': {
+                'rule_name': 'مد لين',
+                'category': 'مد فرعي (2-6 حرَكات)',
+                'guidance': "الواو أو الياء الساكنة المفتوح ما قبلها عند الوقف: يمد 2 أو 4 أو 6 حركات.",
+                'anatomy': "مد صوت الواو/الياء بلين دون تكلف.",
+            },
+        }
     }
+
+    @classmethod
+    def get_makhraj_info(cls, char: str, lang: str = "id") -> Dict[str, str]:
+        code = lang.lower() if lang else "id"
+        if code not in cls.MAKHRAJ_GUIDANCE:
+            code = "id"
+        lang_dict = cls.MAKHRAJ_GUIDANCE.get(code, cls.MAKHRAJ_GUIDANCE["id"])
+        return lang_dict.get(char, {})
+
+    @classmethod
+    def get_tajweed_info(cls, rule_key: str, lang: str = "id") -> Dict[str, str]:
+        code = lang.lower() if lang else "id"
+        if code not in cls.TAJWEED_RULE_GUIDANCE:
+            code = "id"
+        lang_dict = cls.TAJWEED_RULE_GUIDANCE.get(code, cls.TAJWEED_RULE_GUIDANCE["id"])
+        return lang_dict.get(rule_key, {})
 
     @staticmethod
     def _strip_harakat(text: str) -> str:
@@ -150,7 +394,7 @@ class MakhrajEngine:
         return s.replace('\u0651', '')
 
     @classmethod
-    def _detect_tajweed_rules(cls, arabic_text: str) -> Dict[int, List[Dict[str, Any]]]:
+    def _detect_tajweed_rules(cls, arabic_text: str, lang: str = "id") -> Dict[int, List[Dict[str, Any]]]:
         """
         Deteksi aturan tajwid tingkat lanjut pada setiap kata target:
         - Ghunnah Musyaddadah (نّ / مّ bertasydid)
@@ -174,13 +418,14 @@ class MakhrajEngine:
                     while j >= 0 and '\u064B' <= word[j] <= '\u0652':
                         j -= 1
                     if j >= 0 and word[j] in ('ن', 'م'):
+                        info = cls.get_tajweed_info('ghunnah_musyaddadah', lang)
                         rules.append({
                             'type': 'ghunnah_musyaddadah',
                             'letter': word[j] + '\u0651',
-                            'rule_name': cls.TAJWEED_RULE_GUIDANCE['ghunnah_musyaddadah']['rule_name'],
-                            'category': cls.TAJWEED_RULE_GUIDANCE['ghunnah_musyaddadah']['category'],
-                            'guidance': cls.TAJWEED_RULE_GUIDANCE['ghunnah_musyaddadah']['guidance'],
-                            'anatomy': cls.TAJWEED_RULE_GUIDANCE['ghunnah_musyaddadah']['anatomy'],
+                            'rule_name': info.get('rule_name', 'Ghunnah Musyaddadah'),
+                            'category': info.get('category', 'Ghunnah'),
+                            'guidance': info.get('guidance', ''),
+                            'anatomy': info.get('anatomy', ''),
                         })
 
             # ── 2. Deteksi huruf mad & pengikutnya ──
@@ -198,72 +443,78 @@ class MakhrajEngine:
                 nxt = stripped[pos + 1] if pos + 1 < len(stripped) else None
                 # Mad Aridh Lis-Sukun: alif di akhir kata (berlaku saat waqaf)
                 if nxt is None:
+                    info = cls.get_tajweed_info('mad_aridh_lissukun', lang)
                     rules.append({
                         'type': 'mad_aridh_lissukun',
                         'letter': 'ا',
-                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_aridh_lissukun']['rule_name'],
-                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_aridh_lissukun']['category'],
-                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_aridh_lissukun']['guidance'],
-                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_aridh_lissukun']['anatomy'],
+                        'rule_name': info.get('rule_name', 'Mad Aridh Lis-Sukun'),
+                        'category': info.get('category', 'Mad Far\'i'),
+                        'guidance': info.get('guidance', ''),
+                        'anatomy': info.get('anatomy', ''),
                     })
                     continue
                 # Mad Wajib Muttashil: alif bertemu hamzah pada kata yang sama
                 if nxt == 'ء':
+                    info = cls.get_tajweed_info('mad_wajib_muttashil', lang)
                     rules.append({
                         'type': 'mad_wajib_muttashil',
                         'letter': 'ا',
-                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['rule_name'],
-                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['category'],
-                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['guidance'],
-                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['anatomy'],
+                        'rule_name': info.get('rule_name', 'Mad Wajib Muttashil'),
+                        'category': info.get('category', 'Mad Far\'i'),
+                        'guidance': info.get('guidance', ''),
+                        'anatomy': info.get('anatomy', ''),
                     })
                     continue
                 # Mad Lazim Kilmi: alif diikuti huruf bersukun asli dalam satu kata
                 if nxt not in ('ا', 'و', 'ي', 'ء'):
+                    info = cls.get_tajweed_info('mad_lazim', lang)
                     rules.append({
                         'type': 'mad_lazim',
                         'letter': 'ا',
-                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_lazim']['rule_name'],
-                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_lazim']['category'],
-                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_lazim']['guidance'],
-                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_lazim']['anatomy'],
+                        'rule_name': info.get('rule_name', 'Mad Lazim'),
+                        'category': info.get('category', 'Mad Far\'i'),
+                        'guidance': info.get('guidance', ''),
+                        'anatomy': info.get('anatomy', ''),
                     })
                     continue
                 # Mad Jaiz Munfashil: alif di akhir kata sebelum hamzah (kata berikutnya)
                 if idx + 1 < len(words):
                     next_word = cls._strip_harakat(words[idx + 1])
                     if next_word.startswith('ا') and len(next_word) > 1 and next_word[1] == 'ء':
+                        info = cls.get_tajweed_info('mad_jaiz_munfashil', lang)
                         rules.append({
                             'type': 'mad_jaiz_munfashil',
                             'letter': 'ا',
-                            'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_jaiz_munfashil']['rule_name'],
-                            'category': cls.TAJWEED_RULE_GUIDANCE['mad_jaiz_munfashil']['category'],
-                            'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_jaiz_munfashil']['guidance'],
-                            'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_jaiz_munfashil']['anatomy'],
+                            'rule_name': info.get('rule_name', 'Mad Jaiz Munfashil'),
+                            'category': info.get('category', 'Mad Far\'i'),
+                            'guidance': info.get('guidance', ''),
+                            'anatomy': info.get('anatomy', ''),
                         })
 
             # 2b. Waw / Ya: hanya Mad Lin di akhir kata atau Mad Wajib Muttashil dgn hamzah
             for pos, c in waw_ya_positions:
                 # Mad Lin: waw/ya di akhir kata (berlaku saat waqaf)
                 if pos == len(stripped) - 1:
+                    info = cls.get_tajweed_info('mad_lin', lang)
                     rules.append({
                         'type': 'mad_lin',
                         'letter': c,
-                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_lin']['rule_name'],
-                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_lin']['category'],
-                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_lin']['guidance'],
-                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_lin']['anatomy'],
+                        'rule_name': info.get('rule_name', 'Mad Lin'),
+                        'category': info.get('category', 'Mad Far\'i'),
+                        'guidance': info.get('guidance', ''),
+                        'anatomy': info.get('anatomy', ''),
                     })
                     continue
                 # Mad Wajib Muttashil: waw/ya bertemu hamzah dalam satu kata
                 if stripped[pos + 1] == 'ء':
+                    info = cls.get_tajweed_info('mad_wajib_muttashil', lang)
                     rules.append({
                         'type': 'mad_wajib_muttashil',
                         'letter': c,
-                        'rule_name': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['rule_name'],
-                        'category': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['category'],
-                        'guidance': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['guidance'],
-                        'anatomy': cls.TAJWEED_RULE_GUIDANCE['mad_wajib_muttashil']['anatomy'],
+                        'rule_name': info.get('rule_name', 'Mad Wajib Muttashil'),
+                        'category': info.get('category', 'Mad Far\'i'),
+                        'guidance': info.get('guidance', ''),
+                        'anatomy': info.get('anatomy', ''),
                     })
 
             # Hindari duplikasi rule yang sama pada satu kata
@@ -512,12 +763,13 @@ class MakhrajEngine:
     def evaluate_realtime_stream(
         cls,
         target_ayah_text: str,
-        recognized_speech_text: str
+        recognized_speech_text: str,
+        lang: str = "id"
     ) -> Dict[str, Any]:
         """Evaluasi akurat real-time berbasis phoneme matching + word anchor alignment."""
         target_tokens = cls.arabic_to_phonemes(target_ayah_text)
         if not target_tokens:
-            return cls._empty_result('Tidak ada target ayat.')
+            return cls._empty_result('no_target', lang=lang)
 
         if not recognized_speech_text:
             rec_tokens = []
@@ -525,7 +777,7 @@ class MakhrajEngine:
             rec_tokens = cls.arabic_to_phonemes(recognized_speech_text)
 
         if not rec_tokens:
-            return cls._empty_result('Belum ada bacaan yang terdeteksi.')
+            return cls._empty_result('no_speech', lang=lang)
 
         ops = cls.aligned_diff(target_tokens, rec_tokens)
         matched = sum(1 for op, _, _ in ops if op == 'equal')
@@ -533,7 +785,7 @@ class MakhrajEngine:
         rec_total = len(rec_tokens)
         partial_accuracy = round((matched / rec_total) * 100, 1) if rec_total else 0.0
         word_results, makhraj_errors = cls._analyze_word_level(
-            target_ayah_text, target_tokens, rec_tokens, ops
+            target_ayah_text, target_tokens, rec_tokens, ops, lang=lang
         )
 
         target_words_list = [w for w in target_ayah_text.strip().split() if w]
@@ -563,7 +815,7 @@ class MakhrajEngine:
             accuracy = 0
 
         passed = accuracy >= 85
-        feedback = cls._generate_feedback(accuracy, passed, len(makhraj_errors))
+        feedback = cls._generate_feedback(accuracy, passed, len(makhraj_errors), lang=lang)
 
         # Hitung Star Rating (1, 2, atau 3 bintang)
         if accuracy >= 90 and len(makhraj_errors) == 0:
@@ -586,7 +838,7 @@ class MakhrajEngine:
         read_words_count = matched_words_count + wrong_words_count
 
         # Deteksi aturan tajwid tingkat lanjut per-kata (Ghunnah Musyaddadah & Mad Far'i)
-        tajweed_rules = cls._detect_tajweed_rules(target_ayah_text)
+        tajweed_rules = cls._detect_tajweed_rules(target_ayah_text, lang=lang)
 
         return {
             'accuracy': accuracy,
@@ -610,8 +862,6 @@ class MakhrajEngine:
             'recognized_phonemes': ' '.join(rec_tokens),
             'recognized_speech_text': recognized_speech_text,
             'diagnosis_basis': 'phoneme_text_matching',
-            # ponytail: deteksi makhraj akustik (spektral/formant) belum ada —
-            # diagnosis saat ini berbasis perbandingan fonem dari transkrip ASR.
         }
 
     @classmethod
@@ -620,7 +870,8 @@ class MakhrajEngine:
         original_text: str,
         target_tokens: List[str],
         rec_tokens: List[str],
-        ops: List[Tuple[str, str, str]]
+        ops: List[Tuple[str, str, str]],
+        lang: str = "id"
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         words_arabic = [w for w in original_text.strip().split() if w]
         word_token_counts: List[int] = []
@@ -635,6 +886,8 @@ class MakhrajEngine:
         word_matched: Dict[int, int] = {i: 0 for i in range(len(words_arabic))}
         word_total: Dict[int, int] = {i: 0 for i in range(len(words_arabic))}
         word_errors: Dict[int, List[Dict[str, Any]]] = {i: [] for i in range(len(words_arabic))}
+
+        code = (lang or "id").lower()
 
         target_idx = 0
         rec_idx = 0
@@ -659,46 +912,90 @@ class MakhrajEngine:
                         # Hukum Tajweed Waqf Bil Iskan: Vokal pendek akhir di ujung ayat sah dibaca Sukun / berbeda
                         word_matched[word_idx] = word_matched.get(word_idx, 0) + 1
                     else:
-                        vowel_names = {
-                            'a': 'Fathah (a)',
-                            'i': 'Kasrah (i)',
-                            'u': 'Dhommah (u)',
-                            'aa': 'Mad Fathah (aa)',
-                            'ii': 'Mad Kasrah (ii)',
-                            'uu': 'Mad Dhommah (uu)',
-                        }
+                        if code == 'en':
+                            vowel_names = {
+                                'a': 'Fathah (a)', 'i': 'Kasrah (i)', 'u': 'Dhommah (u)',
+                                'aa': 'Mad Fathah (aa)', 'ii': 'Mad Kasrah (ii)', 'uu': 'Mad Dhommah (uu)',
+                            }
+                        elif code == 'ar':
+                            vowel_names = {
+                                'a': 'فتحة (a)', 'i': 'كسرة (i)', 'u': 'ضمة (u)',
+                                'aa': 'مد بالفتح (aa)', 'ii': 'مد بالكسر (ii)', 'uu': 'مد بالضم (uu)',
+                            }
+                        else:
+                            vowel_names = {
+                                'a': 'Fathah (a)', 'i': 'Kasrah (i)', 'u': 'Dhommah (u)',
+                                'aa': 'Mad Fathah (aa)', 'ii': 'Mad Kasrah (ii)', 'uu': 'Mad Dhommah (uu)',
+                            }
 
                         if r_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'} and t_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
                             t_name = vowel_names.get(t_tok, t_tok)
                             r_name = vowel_names.get(r_tok, r_tok)
                             if t_tok in {'aa', 'ii', 'uu'} or r_tok in {'aa', 'ii', 'uu'}:
+                                if code == 'en':
+                                    cat = 'Mad Duration Error'
+                                    guid = f"In word '{target_w}', vowel {t_name} was pronounced as {r_name}. Mind the mad duration (2 counts)."
+                                elif code == 'ar':
+                                    cat = 'خطأ في المد'
+                                    guid = f"في كلمة '{target_w}'، نُطقت حركة {t_name} كـ {r_name}. انتبه لمقدار المد (حركتان)."
+                                else:
+                                    cat = 'Kesalahan Mad (Durasi)'
+                                    guid = f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Perhatikan durasi mad (2 harakat)."
+
                                 word_errors[word_idx].append({
                                     'type': 'mad',
                                     'target': t_tok,
                                     'detected': r_tok,
                                     'target_char': t_name,
                                     'detected_char': r_name,
-                                    'category': 'Kesalahan Mad (Durasi)',
-                                    'guidance': f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Perhatikan durasi mad (2 harakat)."
+                                    'category': cat,
+                                    'guidance': guid
                                 })
                             else:
+                                if code == 'en':
+                                    cat = 'Vowel Harakat Error'
+                                    guid = f"In word '{target_w}', vowel {t_name} was pronounced as {r_name}. Ensure it is recited with clear {t_name}."
+                                elif code == 'ar':
+                                    cat = 'خطأ في الحركات'
+                                    guid = f"في كلمة '{target_w}'، نُطقت الحركة {t_name} كـ {r_name}. ينبغي بيان حركة {t_name} بوضوح."
+                                else:
+                                    cat = 'Kesalahan Harakat (Vokal)'
+                                    guid = f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Pastikan dibaca dengan harakat {t_name} yang jelas."
+
                                 word_errors[word_idx].append({
                                     'type': 'harakat',
                                     'target_vowel': t_tok,
                                     'detected_vowel': r_tok,
                                     'target_char': t_name,
                                     'detected_char': r_name,
-                                    'category': 'Kesalahan Harakat (Vokal)',
-                                    'guidance': f"Pada kata '{target_w}', vokal {t_name} terucap sebagai {r_name}. Pastikan dibaca dengan harakat {t_name} yang jelas."
+                                    'category': cat,
+                                    'guidance': guid
                                 })
                         else:
                             arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
                             detected_char = cls._PHONEME_TO_ARABIC.get(r_tok, r_tok)
-                            info = cls.MAKHRAJ_GUIDANCE.get(arabic_char, {})
-                            guidance = info.get('guidance', f"Pada kata '{target_w}', huruf '{arabic_char}' terucap mirip '{detected_char}'. Periksa makhraj.")
-                            category = info.get('category', 'Artikulasi Makhraj')
-                            anatomy = info.get('anatomy', 'Perhatikan posisi lidah dan rongga tenggorokan saat melafalkan huruf.')
-                            tajweed_rule = info.get('tajweed_rule', 'Sifat & Makhraj Huruf')
+                            info = cls.get_makhraj_info(arabic_char, code)
+
+                            if code == 'en':
+                                fallback_guid = f"In word '{target_w}', letter '{arabic_char}' sounded like '{detected_char}'. Check articulation point."
+                                fallback_cat = 'Makhraj Articulation'
+                                fallback_anat = 'Check tongue position and throat cavity.'
+                                fallback_rule = 'Letter Makhraj & Characteristics'
+                            elif code == 'ar':
+                                fallback_guid = f"في كلمة '{target_w}'، نُطق حرف '{arabic_char}' قريباً من '{detected_char}'. يرجى تحري المخرج."
+                                fallback_cat = 'مخرج الحرف'
+                                fallback_anat = 'انتبه لموضع اللسان والتجويف الحلقي.'
+                                fallback_rule = 'مخرج وصفات الحرف'
+                            else:
+                                fallback_guid = f"Pada kata '{target_w}', huruf '{arabic_char}' terucap mirip '{detected_char}'. Periksa makhraj."
+                                fallback_cat = 'Artikulasi Makhraj'
+                                fallback_anat = 'Perhatikan posisi lidah dan rongga tenggorokan saat melafalkan huruf.'
+                                fallback_rule = 'Sifat & Makhraj Huruf'
+
+                            guidance = info.get('guidance', fallback_guid)
+                            category = info.get('category', fallback_cat)
+                            anatomy = info.get('anatomy', fallback_anat)
+                            tajweed_rule = info.get('tajweed_rule', fallback_rule)
                             word_errors[word_idx].append({
                                 'type': 'makhraj',
                                 'target_char': arabic_char,
@@ -716,12 +1013,22 @@ class MakhrajEngine:
                     word_total[word_idx] = word_total.get(word_idx, 0) + 1
                     extra_char = cls._PHONEME_TO_ARABIC.get(r_tok, r_tok)
                     if r_tok not in {'a', 'i', 'u'}:
+                        if code == 'en':
+                            cat = 'Extra Letter/Vowel'
+                            guid = f"Extra sound '{extra_char}' detected in word '{words_arabic[word_idx]}'."
+                        elif code == 'ar':
+                            cat = 'زيادة حرف أو حركة'
+                            guid = f"تم رصد زيادة حرف/حركة '{extra_char}' في كلمة '{words_arabic[word_idx]}'."
+                        else:
+                            cat = 'Penambahan Huruf/Vokal'
+                            guid = f"Terdapat penambahan sebutan/vokal '{extra_char}' pada kata '{words_arabic[word_idx]}'."
+
                         word_errors[word_idx].append({
                             'type': 'makhraj_extra',
                             'target_char': '',
                             'detected_char': extra_char,
-                            'category': 'Penambahan Huruf/Vokal',
-                            'guidance': f"Terdapat penambahan sebutan/vokal '{extra_char}' pada kata '{words_arabic[word_idx]}'."
+                            'category': cat,
+                            'guidance': guid,
                         })
                 rec_idx += 1
             elif op == 'del':
@@ -736,12 +1043,22 @@ class MakhrajEngine:
                         word_matched[word_idx] = word_matched.get(word_idx, 0) + 1
                     elif t_tok not in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
                         arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
+                        if code == 'en':
+                            cat = 'Missing Letter'
+                            guid = f"Letter '{arabic_char}' was not heard. Ensure it is recited completely."
+                        elif code == 'ar':
+                            cat = 'حرف مفقود'
+                            guid = f"لم يُسمع حرف '{arabic_char}'. يرجى إتمامه في القراءة."
+                        else:
+                            cat = 'Huruf Tidak Terdeteksi'
+                            guid = f"Huruf '{arabic_char}' tidak terdengar. Pastikan dibaca dengan lengkap."
+
                         word_errors[word_idx].append({
                             'type': 'makhraj_missing',
                             'target_char': arabic_char,
                             'detected_char': '',
-                            'category': 'Huruf Tidak Terdeteksi',
-                            'guidance': f"Huruf '{arabic_char}' tidak terdengar. Pastikan dibaca dengan lengkap."
+                            'category': cat,
+                            'guidance': guid,
                         })
                 target_idx += 1
 
@@ -784,7 +1101,15 @@ class MakhrajEngine:
         return word_results, makhraj_errors
 
     @classmethod
-    def _empty_result(cls, msg: str) -> Dict[str, Any]:
+    def _empty_result(cls, msg_key: str, lang: str = "id") -> Dict[str, Any]:
+        code = (lang or "id").lower()
+        if msg_key == 'no_target':
+            msg = "Tidak ada target ayat." if code == 'id' else ("No target ayah." if code == 'en' else "لا توجد آية محددة.")
+        elif msg_key == 'no_speech':
+            msg = "Belum ada bacaan yang terdeteksi." if code == 'id' else ("No recitation detected yet." if code == 'en' else "لم يتم رصد أي قراءة بعد.")
+        else:
+            msg = msg_key
+
         return {
             'accuracy': 0,
             'passed': False,
@@ -796,13 +1121,36 @@ class MakhrajEngine:
         }
 
     @staticmethod
-    def _generate_feedback(accuracy: int, passed: bool, error_count: int) -> str:
-        if passed:
-            if accuracy == 100:
-                return "Masha Allah, bacaan sempurna!"
-            return f"Bagus ({accuracy}%). Perhatikan {error_count} detail kecil."
-        if accuracy == 0:
-            return "Tidak ada bacaan yang terdeteksi."
-        if accuracy < 50:
-            return f"Coba lagi dengan lebih teliti ({accuracy}%)."
-        return f"Hampir ({accuracy}%). Perbaiki {error_count} kesalahan."
+    def _generate_feedback(accuracy: int, passed: bool, error_count: int, lang: str = "id") -> str:
+        code = (lang or "id").lower()
+        if code == "en":
+            if passed:
+                if accuracy == 100:
+                    return "Masha Allah, perfect recitation!"
+                return f"Good job ({accuracy}%). Mind {error_count} minor detail(s)."
+            if accuracy == 0:
+                return "No recitation detected."
+            if accuracy < 50:
+                return f"Try again more carefully ({accuracy}%)."
+            return f"Almost there ({accuracy}%). Correct {error_count} error(s)."
+        elif code == "ar":
+            if passed:
+                if accuracy == 100:
+                    return "ما شاء الله، قراءة ممتازة ومتقنة!"
+                return f"جيد جداً ({accuracy}%). انتبه لـ {error_count} ملاحظة."
+            if accuracy == 0:
+                return "لم يتم اكتشاف أي قراءة."
+            if accuracy < 50:
+                return f"حاول مرة أخرى بتركيز أكبر ({accuracy}%)."
+            return f"قريب جداً ({accuracy}%). يرجى تصحيح {error_count} خطأ."
+        else:
+            if passed:
+                if accuracy == 100:
+                    return "Masya Allah, bacaan sempurna!"
+                return f"Bagus ({accuracy}%). Perhatikan {error_count} detail kecil."
+            if accuracy == 0:
+                return "Tidak ada bacaan yang terdeteksi."
+            if accuracy < 50:
+                return f"Coba lagi dengan lebih teliti ({accuracy}%)."
+            return f"Hampir ({accuracy}%). Perbaiki {error_count} kesalahan."
+
