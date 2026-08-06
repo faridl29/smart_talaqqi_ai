@@ -119,8 +119,8 @@ class TarteelASR:
                 else:
                     logger.info("ENABLE_INT8=false -> Using standard FP32 ONNX model.")
 
-                # Configure CPU Session Options optimized for 2 vCPU / 4 GB RAM VPS
-                num_cores = max(1, min(2, os.cpu_count() or 2))
+                # Configure CPU Session Options (uses all available cores)
+                num_cores = max(1, os.cpu_count() or 2)
                 so = ort.SessionOptions()
                 so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
                 so.intra_op_num_threads = num_cores

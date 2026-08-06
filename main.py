@@ -120,7 +120,8 @@ async def evaluate_recitation(req: RecitationRequest, request: Request) -> Dict[
             f"[HTTP REST] Request Evaluasi (Lang: '{lang_code}') -> Target: '{req.target_ayah_text[:30]}...' | "
             f"Recognized: '{req.recognized_speech_text}'"
         )
-        result = MakhrajEngine.evaluate_realtime_stream(
+        result = await asyncio.to_thread(
+            MakhrajEngine.evaluate_realtime_stream,
             target_ayah_text=req.target_ayah_text,
             recognized_speech_text=req.recognized_speech_text,
             lang=lang_code,
@@ -244,12 +245,14 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             dynamic_tokens = max(32, min(512, target_words * 6 + 30))
                             final_audio = bytes(audio_pcm_buffer)
                             t0 = time.time()
-                            raw_transcript, confidence = TarteelASR.transcribe_pcm(
+                            raw_transcript, confidence = await asyncio.to_thread(
+                                TarteelASR.transcribe_pcm,
                                 final_audio,
-                                max_tokens=dynamic_tokens
+                                max_tokens=dynamic_tokens,
                             )
                             t_asr = time.time() - t0
-                            final_result = MakhrajEngine.evaluate_realtime_stream(
+                            final_result = await asyncio.to_thread(
+                                MakhrajEngine.evaluate_realtime_stream,
                                 target_ayah_text=target_ayah_text,
                                 recognized_speech_text=raw_transcript,
                                 lang=session_lang,
@@ -316,8 +319,11 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             stream_audio = bytes(audio_pcm_buffer[-STREAM_AUDIO_WINDOW_BYTES:])
 
                             t0 = time.time()
-                            raw_transcript, confidence = TarteelASR.transcribe_pcm(
-                                stream_audio, return_confidence=False, max_tokens=24
+                            raw_transcript, confidence = await asyncio.to_thread(
+                                TarteelASR.transcribe_pcm,
+                                stream_audio,
+                                return_confidence=False,
+                                max_tokens=24,
                             )
                             t_asr = time.time() - t0
 
@@ -364,7 +370,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             ordered_words = [session_transcribed_words[i] for i in sorted(session_transcribed_words.keys())]
                             accumulated_text = " ".join(ordered_words)
 
-                            eval_result = MakhrajEngine.evaluate_realtime_stream(
+                            eval_result = await asyncio.to_thread(
+                                MakhrajEngine.evaluate_realtime_stream,
                                 target_ayah_text=target_ayah_text,
                                 recognized_speech_text=accumulated_text if len(accumulated_text.split()) > len(clean.split()) else clean,
                                 lang=session_lang,
@@ -396,13 +403,18 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                 is_auto_completed_sent = True
                                 dynamic_tokens = max(32, min(512, target_total * 6 + 30))
                                 final_audio = bytes(audio_pcm_buffer)
-                                final_raw, final_conf = TarteelASR.transcribe_pcm(final_audio, max_tokens=dynamic_tokens)
+                                final_raw, final_conf = await asyncio.to_thread(
+                                    TarteelASR.transcribe_pcm,
+                                    final_audio,
+                                    max_tokens=dynamic_tokens,
+                                )
 
                                 chosen_raw = final_raw if (final_raw and len(final_raw.split()) >= len(ordered_words)) else accumulated_text
                                 if not chosen_raw:
                                     chosen_raw = clean
 
-                                final_eval = MakhrajEngine.evaluate_realtime_stream(
+                                final_eval = await asyncio.to_thread(
+                                    MakhrajEngine.evaluate_realtime_stream,
                                     target_ayah_text=target_ayah_text,
                                     recognized_speech_text=chosen_raw,
                                     lang=session_lang,
