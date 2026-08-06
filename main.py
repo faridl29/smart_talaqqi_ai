@@ -47,6 +47,12 @@ from whisper_quran_asr import TarteelASR
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("TalaqqiAIServer")
 
+# Batasi transkripsi paralel — ONNX CPU memory-bandwidth bound, >N transcribe bareng
+# bikin semua melambat (thundering herd). Antre rapi, latency stabil.
+_transcribe_sem: asyncio.Semaphore = asyncio.Semaphore(
+    max(2, os.cpu_count() or 2)
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -245,11 +251,12 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             dynamic_tokens = max(32, min(512, target_words * 6 + 30))
                             final_audio = bytes(audio_pcm_buffer)
                             t0 = time.time()
-                            raw_transcript, confidence = await asyncio.to_thread(
-                                TarteelASR.transcribe_pcm,
-                                final_audio,
-                                max_tokens=dynamic_tokens,
-                            )
+                            async with _transcribe_sem:
+                                raw_transcript, confidence = await asyncio.to_thread(
+                                    TarteelASR.transcribe_pcm,
+                                    final_audio,
+                                    max_tokens=dynamic_tokens,
+                                )
                             t_asr = time.time() - t0
                             final_result = await asyncio.to_thread(
                                 MakhrajEngine.evaluate_realtime_stream,
@@ -319,12 +326,13 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             stream_audio = bytes(audio_pcm_buffer[-STREAM_AUDIO_WINDOW_BYTES:])
 
                             t0 = time.time()
-                            raw_transcript, confidence = await asyncio.to_thread(
-                                TarteelASR.transcribe_pcm,
-                                stream_audio,
-                                return_confidence=False,
-                                max_tokens=24,
-                            )
+                            async with _transcribe_sem:
+                                raw_transcript, confidence = await asyncio.to_thread(
+                                    TarteelASR.transcribe_pcm,
+                                    stream_audio,
+                                    return_confidence=False,
+                                    max_tokens=24,
+                                )
                             t_asr = time.time() - t0
 
                             clean = (raw_transcript or "").strip()
@@ -403,11 +411,12 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                 is_auto_completed_sent = True
                                 dynamic_tokens = max(32, min(512, target_total * 6 + 30))
                                 final_audio = bytes(audio_pcm_buffer)
-                                final_raw, final_conf = await asyncio.to_thread(
-                                    TarteelASR.transcribe_pcm,
-                                    final_audio,
-                                    max_tokens=dynamic_tokens,
-                                )
+                                async with _transcribe_sem:
+                                    final_raw, final_conf = await asyncio.to_thread(
+                                        TarteelASR.transcribe_pcm,
+                                        final_audio,
+                                        max_tokens=dynamic_tokens,
+                                    )
 
                                 chosen_raw = final_raw if (final_raw and len(final_raw.split()) >= len(ordered_words)) else accumulated_text
                                 if not chosen_raw:
