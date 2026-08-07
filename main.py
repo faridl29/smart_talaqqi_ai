@@ -97,7 +97,7 @@ _WS_OPEN_PATHS = {"/", "/health", "/api/v1/talaqqi/health"}
 async def api_key_http_middleware(request: Request, call_next):
     if not _require_api_key:
         return await call_next(request)
-    # Health check tetap publik (untuk monitor/load balancer)
+    # Health check publik (untuk monitor/load balancer)
     if request.url.path in _WS_OPEN_PATHS:
         return await call_next(request)
     key = request.headers.get("X-API-Key", "")
@@ -131,8 +131,40 @@ async def health_check() -> Dict[str, Any]:
             "Real-Time WebSocket Audio Streaming with Adaptive VAD",
             "Makhraj & Phonetic Error Diagnosis",
             "Harakat & Vokal (a/i/u) Mismatch Check",
-            "Mad Thabi'i & Kadar Harakat Duration Check"
+            "Mad Thabi'i & Kadar Harakat Duration Check",
+            "Dynamic Remote Config API (/api/v1/config)"
         ]
+    }
+
+
+@app.get("/api/v1/config")
+@app.get("/api/v1/talaqqi/config")
+async def get_remote_config() -> Dict[str, Any]:
+    """
+    Remote Configuration Endpoint for Smart Talaqqi Flutter Client.
+    Allows dynamic app parameter overrides without requiring Play Store updates.
+    """
+    return {
+        "status": "success",
+        "min_app_version": os.getenv("MIN_APP_VERSION", "1.0.0"),
+        "latest_app_version": os.getenv("LATEST_APP_VERSION", "1.0.0"),
+        "is_under_maintenance": os.getenv("IS_UNDER_MAINTENANCE", "false").lower() == "true",
+        "endpoints": {
+            "primary_ai_http_url": os.getenv("PRIMARY_AI_HTTP_URL", "http://43.157.212.249:8000"),
+            "primary_ai_ws_url": os.getenv("PRIMARY_AI_WS_URL", "ws://43.157.212.249:8000/ws/talaqqi/stream"),
+            "backup_ai_http_url": os.getenv("BACKUP_AI_HTTP_URL", ""),
+            "backup_ai_ws_url": os.getenv("BACKUP_AI_WS_URL", ""),
+        },
+        "ai_settings": {
+            "pass_threshold_score": float(os.getenv("PASS_THRESHOLD_SCORE", "75.0")),
+            "max_recording_duration_sec": int(os.getenv("MAX_RECORDING_DURATION_SEC", "30")),
+            "default_playback_rate": float(os.getenv("DEFAULT_PLAYBACK_RATE", "0.75")),
+            "enable_realtime_eval": os.getenv("ENABLE_REALTIME_EVAL", "false").lower() == "true",
+        },
+        "audio_sources": {
+            "default_qari_index": int(os.getenv("DEFAULT_QARI_INDEX", "0")),
+            "qari_base_url": os.getenv("QARI_BASE_URL", "https://everyayah.com/data/")
+        }
     }
 
 
