@@ -34,6 +34,31 @@ class MakhrajEngine:
     _RE_ALEF_VARIANTS = re.compile('[\u0625\u0623\u0622\u0671\u0672\u0673\u0675]')
     _RE_WHITESPACE = re.compile(r'\s+')
 
+    # Database Al-Qur'an ter-standarisasi (O(1) lookup per ayat)
+    _QURAN_DB: Dict[str, Dict[str, Any]] = {}
+
+    @classmethod
+    def load_quran_dataset(cls, json_path: str = "data/quran_clean_asr.json") -> int:
+        """Memuat dataset Al-Qur'an kanonis ke memori server (sekali saat startup)."""
+        import json
+        if not os.path.exists(json_path):
+            logger.warning(f"⚠️ Dataset Al-Qur'an tidak ditemukan di {json_path}")
+            return 0
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                cls._QURAN_DB = json.load(f)
+            logger.info(f"✅ MakhrajEngine: Dataset Al-Qur'an berhasil dimuat ({len(cls._QURAN_DB)} ayat).")
+            return len(cls._QURAN_DB)
+        except Exception as e:
+            logger.error(f"❌ Gagal memuat dataset Al-Qur'an: {e}")
+            return 0
+
+    @classmethod
+    def get_ayah_data(cls, surah: int, ayah: int) -> Optional[Dict[str, Any]]:
+        """Mendapatkan data ayat kanonis (uthmani & clean_asr) berdasarkan surah & ayah."""
+        key = f"{surah}_{ayah}"
+        return cls._QURAN_DB.get(key)
+
     MAKHRAJ_GUIDANCE = {
         'id': {
             'ح': {
@@ -1047,11 +1072,15 @@ class MakhrajEngine:
                     is_last_word = (word_idx == len(words_arabic) - 1)
                     is_end_vowel_at_waqf = is_last_word and (target_idx >= len(target_token_to_word) - 2) and (t_tok in {'a', 'i', 'u'})
 
-                    if is_end_vowel_at_waqf:
-                        # Hukum Tajweed Waqf Bil Iskan: Hilang vokal pendek di akhir ayat dianggap matched
+                    is_vowel_token = t_tok in {'a', 'i', 'u', 'aa', 'ii', 'uu'}
+                    arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
+                    tw = words_arabic[word_idx] if word_idx < len(words_arabic) else ""
+                    is_shaddah_duplicate = '\u0651' in tw and arabic_char in tw
+
+                    if is_end_vowel_at_waqf or is_vowel_token or is_shaddah_duplicate:
+                        # Vokal (pendek/panjang) & konsonan ganda Shaddah Uthmani dihitung matched
                         word_matched[word_idx] = word_matched.get(word_idx, 0) + 1
-                    elif t_tok not in {'a', 'i', 'u', 'aa', 'ii', 'uu'}:
-                        arabic_char = cls._PHONEME_TO_ARABIC.get(t_tok, t_tok)
+                    else:
                         if code == 'en':
                             cat = 'Missing Letter'
                             guid = f"Letter '{arabic_char}' was not heard. Ensure it is recited completely."

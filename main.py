@@ -74,9 +74,10 @@ _MAX_CONCURRENT_WS: int = int(os.getenv("MAX_CONCURRENT_WS", "10"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Pre-load ASR models safely during server startup."""
-    logger.info("Server starting up — pre-loading Tarteel Quran ASR Native ONNX...")
+    """Pre-load ASR models and canonical Quran dataset safely during server startup."""
+    logger.info("Server starting up — pre-loading Tarteel Quran ASR Native ONNX & Quran Dataset...")
     TarteelASR.preload_model()
+    MakhrajEngine.load_quran_dataset()
     yield
 
 
@@ -318,7 +319,22 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                     continue
 
                 if action == "init":
-                    target_ayah_text = data.get("target_ayah_text", "")
+                    surah_val = data.get("surah") or data.get("surah_number") or data.get("surah_id")
+                    ayah_val = data.get("ayah") or data.get("ayah_number") or data.get("ayah_id")
+                    target_ayah_text = ""
+
+                    if surah_val is not None and ayah_val is not None:
+                        try:
+                            canonical_data = MakhrajEngine.get_ayah_data(int(surah_val), int(ayah_val))
+                            if canonical_data:
+                                target_ayah_text = canonical_data.get("imlaei") or canonical_data.get("uthmani", "")
+                                logger.info(f"📖 [WebSocket] Canonical Quran Imlaei Lookup ({surah_val}:{ayah_val}): '{target_ayah_text}'")
+                        except (ValueError, TypeError):
+                            pass
+
+                    if not target_ayah_text:
+                        target_ayah_text = data.get("target_ayah_text", "")
+
                     raw_lang = data.get("lang") or data.get("language") or data.get("locale") or "id"
                     session_lang = raw_lang.strip()[:2].lower()
 
