@@ -484,19 +484,14 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                 for t_idx in range(len(target_words_list)):
                                     if t_idx in used_target_indices:
                                         continue
-                                    if t_idx > last_matched_idx + 1:
+                                    if t_idx > last_matched_idx + 2:
                                         continue
-                                    # Gunakan pre-normalized target words (skip redundant normalize)
+                                    # Gunakan pre-normalized target words
                                     t_norm = target_words_normalized[t_idx] if t_idx < len(target_words_normalized) else MakhrajEngine.normalize_arabic(target_words_list[t_idx])
                                     if not t_norm or not r_norm:
                                         continue
-                                    if t_norm == r_norm:
-                                        sim = 1.0
-                                    elif len(t_norm) <= 3 or len(r_norm) <= 3:
-                                        sim = 0.0
-                                    else:
-                                        sim = MakhrajEngine._word_similarity(target_words_list[t_idx], r_w)
-                                    if sim > best_sim and sim >= 0.82:
+                                    sim = MakhrajEngine._word_similarity(target_words_list[t_idx], r_w)
+                                    if sim > best_sim and sim >= 0.75:
                                         best_sim = sim
                                         best_t_idx = t_idx
                                 if best_t_idx != -1:
