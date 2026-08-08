@@ -59,6 +59,10 @@ class TarteelASR:
     # Pre-cached static prompt tokens & input array
     _prompt_tokens: List[int] = [50258, 50272, 50359, 50363]  # <|startoftranscript|> <|ar|> <|transcribe|> <|notimestamps|>
     _initial_input_ids: Optional[np.ndarray] = None
+
+    # Cached decoder output name mappings (populated at model load time)
+    _dec_kv_map: List[Tuple[str, int]] = []       # [(past_key_name, output_index), ...]
+    _dec_past_kv_map: List[Tuple[str, int]] = []   # same for decoder_with_past
     _eos_token_id: int = 50257
 
     @classmethod
@@ -119,12 +123,16 @@ class TarteelASR:
                 else:
                     logger.info("ENABLE_INT8=false -> Using standard FP32 ONNX model.")
 
-                # Configure CPU Session Options (uses all available cores)
+                # Configure CPU Session Options — tuned for concurrent inference
+                # Dengan semaphore=2 concurrent transcriptions pada 2 vCPU,
+                # 1 intra-op thread per session menghindari CPU oversubscription.
                 num_cores = max(1, os.cpu_count() or 2)
+                concurrent_sessions = max(2, num_cores)
+                threads_per_session = max(1, num_cores // concurrent_sessions)
                 so = ort.SessionOptions()
                 so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-                so.intra_op_num_threads = num_cores
-                so.inter_op_num_threads = num_cores
+                so.intra_op_num_threads = threads_per_session
+                so.inter_op_num_threads = 1  # Sequential antar op (optimal untuk batch=1)
                 so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
                 so.enable_cpu_mem_arena = True
                 so.enable_mem_pattern = True
@@ -142,9 +150,19 @@ class TarteelASR:
 
                 cls._initial_input_ids = np.array([cls._prompt_tokens], dtype=np.int64)
 
+                # Cache decoder output names for KV mapping (avoid re-querying per token step)
+                cls._dec_kv_map = [
+                    (name.replace("present.", "past_key_values."), idx + 1)
+                    for idx, name in enumerate([o.name for o in cls._decoder_sess.get_outputs()][1:])
+                ]
+                cls._dec_past_kv_map = [
+                    (name.replace("present.", "past_key_values."), idx + 1)
+                    for idx, name in enumerate([o.name for o in cls._decoder_past_sess.get_outputs()][1:])
+                ]
+
                 cls._is_loaded = True
                 quant_str = " (Dynamic INT8 Quantized)" if is_quantized else " (FP32)"
-                logger.info(f"⚡ Pure Native ONNX Engine '{cls.MODEL_ID}'{quant_str} loaded successfully! (Threads={num_cores})")
+                logger.info(f"\u26a1 Pure Native ONNX Engine '{cls.MODEL_ID}'{quant_str} loaded successfully! (Threads={threads_per_session} intra, 1 inter)")
                 return cls._encoder_sess
 
             except Exception as e:
@@ -161,8 +179,8 @@ class TarteelASR:
 
     @classmethod
     def is_available(cls) -> bool:
-        """Check if ONNX model is loaded and ready for inference."""
-        return _ort_available and cls.get_model() is not None
+        """Check if ONNX model is loaded and ready for inference (direct field check)."""
+        return cls._is_loaded and cls._encoder_sess is not None
 
     @classmethod
     def preload_model(cls) -> bool:
@@ -230,12 +248,10 @@ class TarteelASR:
 
             tokens: List[int] = list(cls._prompt_tokens) + [next_token]
 
-            # Build Key-Value cache map for decoder_with_past
+            # Build Key-Value cache map for decoder_with_past (using cached name mappings)
             past_kv: Dict[str, np.ndarray] = {}
-            dec_out_names = [o.name for o in cls._decoder_sess.get_outputs()]
-            for idx, name in enumerate(dec_out_names[1:]):
-                past_name = name.replace("present.", "past_key_values.")
-                past_kv[past_name] = dec_out[idx + 1]
+            for past_name, out_idx in cls._dec_kv_map:
+                past_kv[past_name] = dec_out[out_idx]
 
             # 5. Decoder Loop with Past KV Cache
             for step in range(max_tokens - 1):
@@ -264,10 +280,8 @@ class TarteelASR:
                     logger.debug("Tarteel ASR: Early stop due to token repetition loop.")
                     break
 
-                past_out_names = [o.name for o in cls._decoder_past_sess.get_outputs()]
-                for idx, name in enumerate(past_out_names[1:]):
-                    past_name = name.replace("present.", "past_key_values.")
-                    past_kv[past_name] = dec_past_out[idx + 1]
+                for past_name, out_idx in cls._dec_past_kv_map:
+                    past_kv[past_name] = dec_past_out[out_idx]
 
             # 6. Decode tokens into Arabic text
             text = cls._processor.batch_decode([tokens], skip_special_tokens=True)[0].strip()

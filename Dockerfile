@@ -27,5 +27,17 @@ ENV OMP_NUM_THREADS=2 \
 # Expose FastAPI port
 EXPOSE 8000
 
-# Run Uvicorn server (1 worker for optimal 4GB VPS memory allocation)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Healthcheck — auto-restart jika server down
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run Gunicorn + Uvicorn workers (2 workers untuk double concurrent capacity)
+# Setiap worker ~800MB-1.2GB RAM, 2 workers aman di 4GB VPS.
+# Upgrade ke 8GB jika ingin 3-4 workers.
+CMD ["gunicorn", "main:app", \
+     "-k", "uvicorn.workers.UvicornWorker", \
+     "--workers", "2", \
+     "--bind", "0.0.0.0:8000", \
+     "--timeout", "120", \
+     "--graceful-timeout", "30", \
+     "--keep-alive", "30"]

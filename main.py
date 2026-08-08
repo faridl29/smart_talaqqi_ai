@@ -11,8 +11,11 @@ import array
 import time
 import json
 import logging
+import concurrent.futures
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Set, Optional
+
+import numpy as np
 
 # Environment & Math thread limits for 2 vCPU VPS deployment
 try:
@@ -53,6 +56,20 @@ logger = logging.getLogger("TalaqqiAIServer")
 _transcribe_sem: asyncio.Semaphore = asyncio.Semaphore(
     max(2, os.cpu_count() or 2)
 )
+
+# Dedicated thread pools: pisahkan ASR (CPU-heavy) dari evaluasi (CPU-light)
+_asr_pool = concurrent.futures.ThreadPoolExecutor(
+    max_workers=max(2, os.cpu_count() or 2),
+    thread_name_prefix="asr"
+)
+_eval_pool = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="eval"
+)
+
+# Connection limit — cegah server overload saat banyak user bersamaan
+_active_ws: int = 0
+_MAX_CONCURRENT_WS: int = int(os.getenv("MAX_CONCURRENT_WS", "10"))
 
 
 @asynccontextmanager
@@ -208,6 +225,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
     WebSocket Real-Time Audio Stream Endpoint (Tarteel Quran ASR).
     Receives raw PCM 16kHz 16-bit mono stream and returns real-time makhraj evaluation.
     """
+    global _active_ws
+
     # API Key Auth (header dibaca sebelum accept)
     if _require_api_key:
         ws_key = websocket.headers.get("X-API-Key", "")
@@ -215,13 +234,23 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
             await websocket.close(code=4401, reason="Unauthorized: invalid or missing API key")
             return
 
+    # Connection limit guard — tolak koneksi baru jika server penuh
+    if _active_ws >= _MAX_CONCURRENT_WS:
+        await websocket.close(code=4429, reason="Server penuh, coba beberapa saat lagi.")
+        logger.warning(f"[WebSocket] Koneksi ditolak: sudah {_active_ws}/{_MAX_CONCURRENT_WS} aktif.")
+        return
+
     await websocket.accept()
-    logger.info("Client WebSocket terkoneksi ke Talaqqi AI Server.")
+    _active_ws += 1
+    logger.info(f"Client WebSocket terkoneksi ke Talaqqi AI Server. (aktif: {_active_ws}/{_MAX_CONCURRENT_WS})")
 
     target_ayah_text: str = ""
     session_lang: str = "id"
     audio_pcm_buffer: bytearray = bytearray()
     has_spoken_recently: bool = False
+
+    # Pre-normalized target words cache (diisi saat init)
+    target_words_normalized: list = []
 
     # Stream Tuning configuration (VPS 2 vCPU CPU optimization)
     last_audio_eval_size: int = 0
@@ -245,16 +274,16 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
     noise_calibrated: bool = False
 
     def _has_speech(pcm: bytes) -> bool:
+        """Numpy-vectorized VAD — 50-100x faster than pure Python loops."""
         nonlocal noise_baseline_rms, noise_calibrated
-        if not pcm:
+        if not pcm or len(pcm) < 4:
             return False
-        samples = array.array('h', pcm)
-        if not samples:
+        samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+        if len(samples) == 0:
             return False
 
-        # RMS Energy
-        sq = sum(s * s for s in samples)
-        rms = (sq / len(samples)) ** 0.5
+        # RMS Energy (vectorized)
+        rms = float(np.sqrt(np.mean(samples * samples)))
 
         # Noise baseline calibration from initial audio
         if not noise_calibrated and len(audio_pcm_buffer) <= EVAL_WINDOW_BYTES * 2:
@@ -265,9 +294,8 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
         if rms <= adaptive_threshold:
             return False
 
-        # Zero-Crossing Rate check
-        zero_crossings = sum(1 for i in range(1, len(samples)) if (samples[i] >= 0) != (samples[i - 1] >= 0))
-        zcr = zero_crossings / len(samples)
+        # Zero-Crossing Rate check (vectorized)
+        zcr = float(np.mean(np.diff(np.signbit(samples))))
         if zcr > 0.35:
             return False  # Likely noise rather than speech
 
@@ -303,6 +331,11 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                     session_matched_indices.clear()
                     session_transcribed_words.clear()
                     session_word_similarities.clear()
+                    # Pre-normalize target words sekali saat init (hindari re-normalize di hot loop)
+                    target_words_normalized = [
+                        MakhrajEngine.normalize_arabic(w)
+                        for w in target_ayah_text.strip().split() if w
+                    ]
                     logger.info(f"[WebSocket] Init Talaqqi Stream (Lang: '{session_lang}') untuk Target Ayat: '{target_ayah_text}'")
                     await websocket.send_json({
                         "status": "initialized",
@@ -316,19 +349,24 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             target_words = len(target_ayah_text.split())
                             dynamic_tokens = max(32, min(512, target_words * 6 + 30))
                             final_audio = bytes(audio_pcm_buffer)
+                            loop = asyncio.get_running_loop()
                             t0 = time.time()
                             async with _transcribe_sem:
-                                raw_transcript, confidence = await asyncio.to_thread(
-                                    TarteelASR.transcribe_pcm,
-                                    final_audio,
-                                    max_tokens=dynamic_tokens,
+                                raw_transcript, confidence = await loop.run_in_executor(
+                                    _asr_pool,
+                                    lambda: TarteelASR.transcribe_pcm(
+                                        final_audio,
+                                        max_tokens=dynamic_tokens,
+                                    )
                                 )
                             t_asr = time.time() - t0
-                            final_result = await asyncio.to_thread(
-                                MakhrajEngine.evaluate_realtime_stream,
-                                target_ayah_text=target_ayah_text,
-                                recognized_speech_text=raw_transcript,
-                                lang=session_lang,
+                            final_result = await loop.run_in_executor(
+                                _eval_pool,
+                                lambda: MakhrajEngine.evaluate_realtime_stream(
+                                    target_ayah_text=target_ayah_text,
+                                    recognized_speech_text=raw_transcript,
+                                    lang=session_lang,
+                                )
                             )
                             final_result["raw_transcript"] = raw_transcript
                             final_result["recognized_speech_text"] = raw_transcript
@@ -391,22 +429,28 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             STREAM_AUDIO_WINDOW_BYTES = min(len(audio_pcm_buffer), 160000)
                             stream_audio = bytes(audio_pcm_buffer[-STREAM_AUDIO_WINDOW_BYTES:])
 
+                            loop = asyncio.get_running_loop()
                             t0 = time.time()
                             async with _transcribe_sem:
-                                raw_transcript, confidence = await asyncio.to_thread(
-                                    TarteelASR.transcribe_pcm,
-                                    stream_audio,
-                                    return_confidence=False,
-                                    max_tokens=24,
+                                raw_transcript, confidence = await loop.run_in_executor(
+                                    _asr_pool,
+                                    lambda: TarteelASR.transcribe_pcm(
+                                        stream_audio,
+                                        return_confidence=False,
+                                        max_tokens=24,
+                                    )
                                 )
                             t_asr = time.time() - t0
 
                             clean = (raw_transcript or "").strip()
                             # Buang kata berulang berurutan (gejala halusinasi Whisper)
                             words_clean = []
+                            prev_norm = ""
                             for w in clean.split():
-                                if not words_clean or MakhrajEngine.normalize_arabic(w) != MakhrajEngine.normalize_arabic(words_clean[-1]):
+                                w_norm = MakhrajEngine.normalize_arabic(w)
+                                if w_norm != prev_norm:
                                     words_clean.append(w)
+                                    prev_norm = w_norm
                             clean = " ".join(words_clean)
                             if not clean or not any('\u0600' <= c <= '\u06FF' for c in clean):
                                 continue
@@ -418,14 +462,24 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             last_matched_idx = max(session_matched_indices) if session_matched_indices else 0
 
                             for r_w in rec_words_list:
+                                r_norm = MakhrajEngine.normalize_arabic(r_w)
                                 best_sim = 0.0
                                 best_t_idx = -1
-                                for t_idx, t_w in enumerate(target_words_list):
+                                for t_idx in range(len(target_words_list)):
                                     if t_idx in used_target_indices:
                                         continue
                                     if t_idx > last_matched_idx + 1:
                                         continue
-                                    sim = MakhrajEngine._word_similarity(t_w, r_w)
+                                    # Gunakan pre-normalized target words (skip redundant normalize)
+                                    t_norm = target_words_normalized[t_idx] if t_idx < len(target_words_normalized) else MakhrajEngine.normalize_arabic(target_words_list[t_idx])
+                                    if not t_norm or not r_norm:
+                                        continue
+                                    if t_norm == r_norm:
+                                        sim = 1.0
+                                    elif len(t_norm) <= 3 or len(r_norm) <= 3:
+                                        sim = 0.0
+                                    else:
+                                        sim = MakhrajEngine._word_similarity(target_words_list[t_idx], r_w)
                                     if sim > best_sim and sim >= 0.82:
                                         best_sim = sim
                                         best_t_idx = t_idx
@@ -444,11 +498,13 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             ordered_words = [session_transcribed_words[i] for i in sorted(session_transcribed_words.keys())]
                             accumulated_text = " ".join(ordered_words)
 
-                            eval_result = await asyncio.to_thread(
-                                MakhrajEngine.evaluate_realtime_stream,
-                                target_ayah_text=target_ayah_text,
-                                recognized_speech_text=accumulated_text if len(accumulated_text.split()) > len(clean.split()) else clean,
-                                lang=session_lang,
+                            eval_result = await loop.run_in_executor(
+                                _eval_pool,
+                                lambda: MakhrajEngine.evaluate_realtime_stream(
+                                    target_ayah_text=target_ayah_text,
+                                    recognized_speech_text=accumulated_text if len(accumulated_text.split()) > len(clean.split()) else clean,
+                                    lang=session_lang,
+                                )
                             )
 
                             actual_matched = sum(
@@ -475,24 +531,36 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                             )
                             if target_total > 0 and is_contiguous:
                                 is_auto_completed_sent = True
-                                dynamic_tokens = max(32, min(512, target_total * 6 + 30))
-                                final_audio = bytes(audio_pcm_buffer)
-                                async with _transcribe_sem:
-                                    final_raw, final_conf = await asyncio.to_thread(
-                                        TarteelASR.transcribe_pcm,
-                                        final_audio,
-                                        max_tokens=dynamic_tokens,
+                                # Skip re-transcription jika accumulated text sudah cukup baik
+                                # (hemat 1 ASR inference ~0.5-2s, bebaskan semaphore slot)
+                                min_sim = min(session_word_similarities.values()) if session_word_similarities else 0.0
+                                if min_sim >= 0.90 and accumulated_text:
+                                    # Accumulated text sudah cukup akurat — langsung evaluasi final
+                                    chosen_raw = accumulated_text
+                                    final_conf = min_sim
+                                else:
+                                    # Full re-transcription hanya jika coverage/similarity rendah
+                                    dynamic_tokens = max(32, min(512, target_total * 6 + 30))
+                                    final_audio = bytes(audio_pcm_buffer)
+                                    async with _transcribe_sem:
+                                        final_raw, final_conf = await loop.run_in_executor(
+                                            _asr_pool,
+                                            lambda: TarteelASR.transcribe_pcm(
+                                                final_audio,
+                                                max_tokens=dynamic_tokens,
+                                            )
+                                        )
+                                    chosen_raw = final_raw if (final_raw and len(final_raw.split()) >= len(ordered_words)) else accumulated_text
+                                    if not chosen_raw:
+                                        chosen_raw = clean
+
+                                final_eval = await loop.run_in_executor(
+                                    _eval_pool,
+                                    lambda: MakhrajEngine.evaluate_realtime_stream(
+                                        target_ayah_text=target_ayah_text,
+                                        recognized_speech_text=chosen_raw,
+                                        lang=session_lang,
                                     )
-
-                                chosen_raw = final_raw if (final_raw and len(final_raw.split()) >= len(ordered_words)) else accumulated_text
-                                if not chosen_raw:
-                                    chosen_raw = clean
-
-                                final_eval = await asyncio.to_thread(
-                                    MakhrajEngine.evaluate_realtime_stream,
-                                    target_ayah_text=target_ayah_text,
-                                    recognized_speech_text=chosen_raw,
-                                    lang=session_lang,
                                 )
                                 final_eval["status"] = "auto_completed"
                                 final_eval["raw_transcript"] = chosen_raw
@@ -507,10 +575,27 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
                                 eval_result["recognized_speech_text"] = live_accumulated
 
                             logger.info(
-                                f"⏱️ [WebSocket Stream] ASR: {t_asr:.3f}s | Status ({eval_result['status']}): "
+                                f"\u23f1\ufe0f [WebSocket Stream] ASR: {t_asr:.3f}s | Status ({eval_result['status']}): "
                                 f"'{eval_result.get('raw_transcript', clean)}' -> Match: {actual_matched}/{target_total} ({eval_result.get('accuracy')}%)"
                             )
-                            await websocket.send_json(eval_result)
+
+                            # Lightweight response untuk streaming (hemat bandwidth 50-70%)
+                            # Full response hanya dikirim saat auto_completed/completed
+                            if eval_result["status"] == "evaluating":
+                                await websocket.send_json({
+                                    "status": "evaluating",
+                                    "accuracy": eval_result.get("accuracy", 0),
+                                    "matched_count": actual_matched,
+                                    "total_words": target_total,
+                                    "progress": eval_result["progress"],
+                                    "word_results": eval_result.get("word_results", []),
+                                    "raw_transcript": eval_result.get("raw_transcript", ""),
+                                    "recognized_speech_text": eval_result.get("recognized_speech_text", ""),
+                                    "source": "tarteel",
+                                    "is_realtime": True,
+                                })
+                            else:
+                                await websocket.send_json(eval_result)
                     finally:
                         is_evaluating = False
                 continue
@@ -523,6 +608,9 @@ async def websocket_talaqqi_stream(websocket: WebSocket) -> None:
             await websocket.send_json({"status": "error", "message": str(e)})
         except Exception:
             pass
+    finally:
+        _active_ws = max(0, _active_ws - 1)
+        logger.info(f"WebSocket session ditutup. (aktif: {_active_ws}/{_MAX_CONCURRENT_WS})")
 
 
 if __name__ == "__main__":

@@ -25,6 +25,15 @@ logger = logging.getLogger("MakhrajEngine")
 class MakhrajEngine:
     """Engine Analisis Makhraj Akustik Real-Time berbasis PHONEME MATCHING."""
 
+    # Pre-compiled regex patterns — menghindari re-compilation setiap panggilan
+    _RE_HARAKAT = re.compile('[\u064B-\u065F\u0670\u06D6-\u06ED\u0640]')
+    _RE_INVISIBLE = re.compile('[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]')
+    _RE_QURANIC = re.compile('[\u0610-\u061A\u06D6-\u06ED]')
+    _RE_TASHKEEL = re.compile('[\u064B-\u065F\u0670]')
+    _RE_SMALL = re.compile('[\u06E5\u06E6]')
+    _RE_ALEF_VARIANTS = re.compile('[\u0625\u0623\u0622\u0671\u0672\u0673\u0675]')
+    _RE_WHITESPACE = re.compile(r'\s+')
+
     MAKHRAJ_GUIDANCE = {
         'id': {
             'ح': {
@@ -384,13 +393,13 @@ class MakhrajEngine:
         lang_dict = cls.TAJWEED_RULE_GUIDANCE.get(code, cls.TAJWEED_RULE_GUIDANCE["id"])
         return lang_dict.get(rule_key, {})
 
-    @staticmethod
-    def _strip_harakat(text: str) -> str:
+    @classmethod
+    def _strip_harakat(cls, text: str) -> str:
         """Hapus seluruh harakat & tanda baca (kecuali huruf & shadda/tasydid)."""
         if not text:
             return ''
-        s = re.sub('[\u064B-\u065F\u0670\u06D6-\u06ED\u0640]', '', text)
-        s = re.sub('[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]', '', s)
+        s = cls._RE_HARAKAT.sub('', text)
+        s = cls._RE_INVISIBLE.sub('', s)
         return s.replace('\u0651', '')
 
     @classmethod
@@ -529,19 +538,19 @@ class MakhrajEngine:
 
         return rules_by_word
 
-    @staticmethod
-    def normalize_arabic(text: str) -> str:
+    @classmethod
+    def normalize_arabic(cls, text: str) -> str:
         """Normalisasi teks Arab murni (hapus harakat, kontrol, dll)."""
         if not text:
             return ''
-        cleaned = re.sub(r'[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]', '', text)
-        cleaned = re.sub(r'[\u0610-\u061A\u06D6-\u06ED]', '', cleaned)
-        cleaned = re.sub(r'[\u064B-\u065F\u0670]', '', cleaned)
+        cleaned = cls._RE_INVISIBLE.sub('', text)
+        cleaned = cls._RE_QURANIC.sub('', cleaned)
+        cleaned = cls._RE_TASHKEEL.sub('', cleaned)
         cleaned = cleaned.replace('\u0640', '')
-        cleaned = re.sub(r'[\u06E5\u06E6]', '', cleaned)
-        cleaned = re.sub(r'[إأآٱٲٳٵ]', 'ا', cleaned).replace('\u0671', 'ا')
+        cleaned = cls._RE_SMALL.sub('', cleaned)
+        cleaned = cls._RE_ALEF_VARIANTS.sub('ا', cleaned).replace('\u0671', 'ا')
         cleaned = cleaned.replace('ة', 'ه').replace('ى', 'ي').replace('ؤ', 'و').replace('ئ', 'ي').replace('ء', '')
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        cleaned = cls._RE_WHITESPACE.sub(' ', cleaned).strip()
         return cleaned
 
     _ARABIC_TO_PHONEME = {

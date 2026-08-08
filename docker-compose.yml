@@ -8,14 +8,25 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - HF_HOME=/root/.cache/huggingface
+      - MAX_CONCURRENT_WS=10
     volumes:
-      - .:/app
+      # Hapus bind mount `.:/app` di production (overhead filesystem)
+      # - .:/app
       - hf_cache:/root/.cache/huggingface
     deploy:
       resources:
         limits:
           cpus: '2.0'
-          memory: 3500M
+          memory: 3800M
+        reservations:
+          cpus: '1.0'
+          memory: 2000M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 volumes:
   hf_cache:
